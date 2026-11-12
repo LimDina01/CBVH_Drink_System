@@ -1,0 +1,172 @@
+@import 'tailwindcss';
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@source '../views/**/*.blade.php';
+@source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
+@source '../../storage/framework/views/*.php';
+
+@theme {
+    --font-sans: 'Plus Jakarta Sans', 'Noto Sans Khmer', 'Instrument Sans', ui-sans-serif, system-ui, sans-serif;
+    --font-serif: 'Cormorant Garamond', Georgia, serif;
+
+    /* CBVH Luxury Jewelry Brand Palette */
+    --color-cbvh-bronze: #9E6B55;
+    --color-cbvh-bronze-dark: #835440;
+    --color-cbvh-champagne: #E8CFC1;
+    --color-cbvh-ivory: #FAF6F3;
+    --color-cbvh-cream: #F5EDE7;
+    --color-cbvh-border: #E8DDD6;
+    --color-cbvh-ink: #2C211C;
+    --color-cbvh-muted: #7C6A60;
+}
+
+/* Subtle faceted diamond background inspired by CBVH brand visuals */
+.cbvh-diamond-bg {
+    background-color: #FAF6F3;
+    background-image:
+        linear-gradient(135deg, rgba(158, 107, 85, 0.04) 25%, transparent 25%),
+        linear-gradient(225deg, rgba(158, 107, 85, 0.03) 25%, transparent 25%),
+        linear-gradient(45deg, rgba(232, 207, 193, 0.08) 25%, transparent 25%),
+        linear-gradient(315deg, rgba(255, 255, 255, 0.5) 25%, #FAF6F3 25%);
+    background-position: 24px 0, 24px 0, 0 0, 0 0;
+    background-size: 48px 48px;
+}
+
+.dark .cbvh-diamond-bg {
+    background-color: #1A1412;
+    background-image:
+        linear-gradient(135deg, rgba(232, 207, 193, 0.03) 25%, transparent 25%),
+        linear-gradient(225deg, rgba(232, 207, 193, 0.02) 25%, transparent 25%),
+        linear-gradient(45deg, rgba(158, 107, 85, 0.04) 25%, transparent 25%),
+        linear-gradient(315deg, rgba(26, 20, 18, 0.5) 25%, #1A1412 25%);
+    background-position: 24px 0, 24px 0, 0 0, 0 0;
+    background-size: 48px 48px;
+}
+
+/* Prevent iOS native date / time / select overflow in WKWebView */
+input[type="date"],
+input[type="time"],
+input[type="datetime-local"],
+select {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+}
+
+input[type="date"]::-webkit-date-and-time-value,
+input[type="time"]::-webkit-date-and-time-value,
+input[type="datetime-local"]::-webkit-date-and-time-value {
+    text-align: left;
+}
+
+/* Prevent iOS rubber-band overscroll from pulling down / collapsing the Telegram sheet */
+html,
+body {
+    overscroll-behavior-y: none;
+}
+
+/* Telegram Fullscreen (Bot API 8.0+) safe-area header & bottom bar spacing */
+.cbvh-safe-header {
+    padding-top: calc(
+        12px
+        + max(var(--cbvh-safe-top, 0px), var(--tg-safe-area-inset-top, 0px))
+        + max(var(--cbvh-content-safe-top, 0px), var(--tg-content-safe-area-inset-top, 0px))
+    );
+}
+
+.cbvh-safe-bottom-nav {
+    padding-bottom: max(
+        10px,
+        var(--cbvh-safe-bottom, 0px),
+        var(--tg-safe-area-inset-bottom, 0px),
+        env(safe-area-inset-bottom, 0px)
+    );
+}
+
+/* Smooth Telegram Mini App animations */
+@keyframes cbvhFadeSlideIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes cbvhBackdropFade {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
+}
+
+@keyframes cbvhSheetUp {
+    from {
+        opacity: 0;
+        transform: translateY(32px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes cbvhSlideFromRight {
+    from {
+        opacity: 0;
+        transform: translateX(18px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+@keyframes cbvhSlideFromLeft {
+    from {
+        opacity: 0;
+        transform: translateX(-18px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+.cbvh-fade-slide {
+    animation: cbvhFadeSlideIn 260ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.cbvh-slide-from-right {
+    animation: cbvhSlideFromRight 260ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.cbvh-slide-from-left {
+    animation: cbvhSlideFromLeft 260ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.cbvh-backdrop-fade {
+    animation: cbvhBackdropFade 200ms ease-out both;
+}
+
+.cbvh-sheet-up {
+    animation: cbvhSheetUp 280ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .cbvh-fade-slide,
+    .cbvh-slide-from-right,
+    .cbvh-slide-from-left,
+    .cbvh-backdrop-fade,
+    .cbvh-sheet-up {
+        animation: none;
+    }
+}
