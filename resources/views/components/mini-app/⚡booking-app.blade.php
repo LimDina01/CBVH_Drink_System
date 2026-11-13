@@ -580,14 +580,29 @@ new class extends Component
         </div>
     </header>
 
+    <!-- Floating Toast Notification (iOS / Telegram Dynamic Capsule Style) -->
     @if($flashMessage)
-        <div wire:key="tma-flash-{{ md5($flashMessage . $flashType) }}"
-             class="cbvh-fade-slide mx-4 mt-3 p-3.5 rounded-xl text-xs font-medium flex items-center justify-between shadow-2xs {{ $flashType === 'success' ? 'bg-white border border-[#9E6B55]/40 text-[#2C211C] dark:bg-[#2A201C] dark:text-[#F5EDE7]' : 'bg-rose-50 text-rose-800 border border-rose-200 dark:bg-rose-950/60 dark:text-rose-200' }}">
-            <div class="flex items-center space-x-2">
-                <span class="w-2 h-2 rounded-full {{ $flashType === 'success' ? 'bg-[#9E6B55]' : 'bg-rose-500' }}"></span>
-                <span>{{ $flashMessage }}</span>
+        <div wire:key="tma-toast-{{ md5($flashMessage . ($flashType ?? 'success') . microtime()) }}"
+             x-data="{ show: true }"
+             x-init="setTimeout(() => { show = false; setTimeout(() => $wire.set('flashMessage', null), 300); }, 2800)"
+             x-show="show"
+             x-transition:enter="transition ease-out duration-300 transform"
+             x-transition:enter-start="opacity-0 -translate-y-4 scale-95"
+             x-transition:enter-end="opacity-100 translate-y-0 scale-100"
+             x-transition:leave="transition ease-in duration-200 transform"
+             x-transition:leave-start="opacity-100 scale-100"
+             x-transition:leave-end="opacity-0 -translate-y-3 scale-95"
+             class="fixed top-16 left-4 right-4 z-50 max-w-sm mx-auto pointer-events-auto">
+            <div class="flex items-center space-x-2.5 px-4 py-3 rounded-2xl shadow-2xl backdrop-blur-md border {{ ($flashType ?? 'success') === 'success' ? 'bg-white/95 dark:bg-[#241C19]/95 border-[#9E6B55]/40 text-[#2C211C] dark:text-[#F5EDE7]' : 'bg-rose-50/95 dark:bg-rose-950/90 border-rose-300 dark:border-rose-800 text-rose-900 dark:text-rose-100' }}">
+                <span class="w-6 h-6 rounded-full flex items-center justify-center shrink-0 text-xs font-black {{ ($flashType ?? 'success') === 'success' ? 'bg-[#9E6B55] text-white shadow-xs' : 'bg-rose-500 text-white shadow-xs' }}">
+                    {{ ($flashType ?? 'success') === 'success' ? '✓' : '!' }}
+                </span>
+                <span class="text-xs font-bold leading-tight flex-1">{{ $flashMessage }}</span>
+                <button type="button" @click="show = false; setTimeout(() => $wire.set('flashMessage', null), 300)"
+                        class="p-1 text-[#7C6A60] hover:text-[#2C211C] dark:hover:text-white rounded-lg transition cursor-pointer text-base leading-none">
+                    &times;
+                </button>
             </div>
-            <button wire:click="$set('flashMessage', null)" class="text-[#7C6A60] hover:text-[#2C211C] font-bold text-base leading-none ml-3">&times;</button>
         </div>
     @endif
 

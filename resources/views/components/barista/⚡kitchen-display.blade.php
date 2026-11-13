@@ -211,15 +211,23 @@ new class extends Component
         </div>
     </header>
 
+    <!-- Floating Toast Notification (Modern & Smooth) -->
     @if($flashMessage)
-        <div wire:key="toast-{{ md5($flashMessage . microtime()) }}"
+        <div wire:key="barista-toast-{{ md5($flashMessage . microtime()) }}"
              x-data="{ show: true }"
-             x-init="setTimeout(() => { show = false; $wire.set('flashMessage', null); }, 2200)"
+             x-init="setTimeout(() => { show = false; setTimeout(() => $wire.set('flashMessage', null), 300); }, 2200)"
              x-show="show"
-             x-transition.opacity.duration.300ms
-             class="fixed bottom-5 right-5 z-40 pointer-events-none">
-            <div class="px-5 py-3.5 bg-emerald-600 text-white rounded-2xl text-base font-black shadow-xl flex items-center space-x-2">
-                <span>✅ {{ $flashMessage }}</span>
+             x-transition:enter="transition ease-out duration-300 transform"
+             x-transition:enter-start="opacity-0 translate-y-4 scale-95"
+             x-transition:enter-end="opacity-100 translate-y-0 scale-100"
+             x-transition:leave="transition ease-in duration-200 transform"
+             x-transition:leave-start="opacity-100 scale-100"
+             x-transition:leave-end="opacity-0 translate-y-2 scale-95"
+             class="fixed bottom-6 right-6 z-50 pointer-events-auto">
+            <div @click="show = false; setTimeout(() => $wire.set('flashMessage', null), 300)"
+                 class="px-5 py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl text-base font-black shadow-2xl flex items-center space-x-2.5 cursor-pointer transition select-none">
+                <span class="w-6 h-6 rounded-full bg-white/20 flex items-center justify-center text-xs">✓</span>
+                <span>{{ $flashMessage }}</span>
             </div>
         </div>
     @endif
