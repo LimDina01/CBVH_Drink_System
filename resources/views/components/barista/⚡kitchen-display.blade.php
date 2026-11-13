@@ -129,21 +129,22 @@ new class extends Component
         },
         unlockAudio() {
             this.keepScreenAwake();
+            ['barista-sound-quick', 'barista-sound-meeting'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) {
+                    el.load();
+                }
+            });
+        },
+        playDingDong() {
             try {
                 if (!this.audioCtx) {
                     const Ctx = window.AudioContext || window.webkitAudioContext;
                     if (Ctx) this.audioCtx = new Ctx();
                 }
-                if (this.audioCtx && this.audioCtx.state === 'suspended') {
-                    this.audioCtx.resume().catch(() => {});
-                }
-            } catch (e) {}
-        },
-        playDingDong() {
-            try {
-                this.unlockAudio();
                 const ctx = this.audioCtx;
                 if (!ctx) return;
+                if (ctx.state === 'suspended') ctx.resume().catch(() => {});
                 const now = ctx.currentTime;
                 [587.33, 880].forEach((freq, idx) => {
                     const osc = ctx.createOscillator();
@@ -162,23 +163,35 @@ new class extends Component
         playOrderAlert(type = 'quick') {
             if (!this.soundOn) return;
             this.unlockAudio();
-            this.playDingDong();
 
-            setTimeout(() => {
-                try {
-                    const voiceSrc = (type === 'meeting') 
-                        ? '{{ asset('sounds/voice-meeting.mp3') }}' 
-                        : '{{ asset('sounds/voice-quick.mp3') }}';
-                    const voice = new Audio(voiceSrc);
-                    voice.play().catch(() => {});
-                } catch (e) {}
-            }, 600);
+            try {
+                const audioId = (type === 'meeting') ? 'barista-sound-meeting' : 'barista-sound-quick';
+                const el = document.getElementById(audioId);
+                if (el) {
+                    el.currentTime = 0;
+                    const p = el.play();
+                    if (p !== undefined) {
+                        p.catch(err => {
+                            console.warn('Direct audio play failed, falling back to chime:', err);
+                            this.playDingDong();
+                        });
+                    }
+                } else {
+                    this.playDingDong();
+                }
+            } catch (e) {
+                this.playDingDong();
+            }
         }
      }"
      @click.window="unlockAudio()"
      @touchstart.window="unlockAudio()"
      @new-barista-order.window="playOrderAlert($event.detail?.orderType || 'quick')"
      class="min-h-screen bg-[#FAF6F3] dark:bg-[#1A1412] text-[#2C211C] dark:text-[#F5EDE7] flex flex-col touch-manipulation select-none">
+
+    <!-- Preloaded Sound Elements (Chime + Official Voice merged) -->
+    <audio id="barista-sound-quick" preload="auto" src="{{ asset('sounds/voice-quick.wav') }}"></audio>
+    <audio id="barista-sound-meeting" preload="auto" src="{{ asset('sounds/voice-meeting.wav') }}"></audio>
 
     <!-- Header -->
     <header class="bg-white dark:bg-[#241C19] border-b-2 border-[#E8DDD6] dark:border-[#3D2F29] px-5 py-3.5 flex flex-wrap items-center justify-between gap-3 sticky top-0 z-10 shadow-xs">
