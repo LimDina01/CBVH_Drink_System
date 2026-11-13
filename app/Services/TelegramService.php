@@ -399,13 +399,19 @@ class TelegramService
             return;
         }
 
-        $text = "🚚 <b>Your Drink Order #{$order->id} is OUT FOR DELIVERY!</b>\n\n"
-              . "<b>Room:</b> {$order->room->name}\n"
-              . "Please tap <b>Confirm Received</b> once it arrives (auto-completes in 15 mins):";
+        $appUrl = config('app.url');
+        if (empty($appUrl) || str_starts_with($appUrl, 'http://localhost')) {
+            $appUrl = 'https://orderdrink.cbvh66.com:3000';
+        }
+
+        $text = "🚚 <b>Drink Order #{$order->id} is OUT FOR DELIVERY!</b>\n\n"
+              . "📍 <b>Destination:</b> {$order->room->name}\n"
+              . "⏱️ Drinks will auto-complete in 10 minutes upon arrival.\n\n"
+              . "Tap below to view live order status or confirm receipt:";
 
         $keyboard = [
             [
-                ['text' => '✅ Confirm Received • បានទទួល', 'callback_data' => "user_received_{$order->id}"],
+                ['text' => '📱 Open Mini App • បើកកម្មវិធី', 'web_app' => ['url' => $appUrl]],
             ]
         ];
 

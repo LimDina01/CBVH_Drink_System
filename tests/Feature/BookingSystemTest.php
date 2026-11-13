@@ -1156,4 +1156,42 @@ class BookingSystemTest extends TestCase
             ->assertSet('flashType', 'success')
             ->assertCount('drinkCart', 1);
     }
+
+    public function test_barista_marking_in_delivery_sends_mini_app_link_to_user_telegram(): void
+    {
+        $barista = User::where('role', 'barista')->first();
+        $employee = User::where('role', 'employee')->first();
+        $employee->update(['telegram_chat_id' => '12345678']);
+
+        $hq = Branch::where('code', 'HQ')->first();
+        $room = $hq->rooms()->first();
+
+        $order = DrinkOrder::create([
+            'user_id' => $employee->id,
+            'branch_id' => $hq->id,
+            'room_id' => $room->id,
+            'order_type' => 'instant',
+            'status' => 'preparing',
+        ]);
+
+        Livewire::actingAs($barista)
+            ->test('barista.kitchen-display')
+            ->call('markInDelivery', $order->id);
+
+        $this->assertSame('in_delivery', $order->fresh()->status);
+
+        Http::assertSent(function (\Illuminate\Http\Client\Request $request) use ($order) {
+            if (!str_contains($request->url(), '/sendMessage')) {
+                return false;
+            }
+            if ((string) $request['chat_id'] !== '12345678') {
+                return false;
+            }
+            $replyMarkup = json_decode($request['reply_markup'] ?? '{}', true);
+            $button = $replyMarkup['inline_keyboard'][0][0] ?? [];
+            return str_contains($request['text'], "Order #{$order->id} is OUT FOR DELIVERY")
+                && str_contains($button['text'], 'Open Mini App')
+                && !empty($button['web_app']['url']);
+        });
+    }
 }
