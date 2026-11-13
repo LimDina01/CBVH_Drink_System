@@ -20,6 +20,7 @@
 /public/storage
 /database/*.sqlite
 /database/*.sqlite-journal
+/scratch/
 /storage/app/public/attachments/
 /storage/*.key
 /storage/pail

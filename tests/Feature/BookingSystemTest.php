@@ -159,7 +159,7 @@ class BookingSystemTest extends TestCase
 
         $hq = Branch::where('is_hq', true)->first();
         $employee = User::where('email', 'employee@company.com')->first();
-        $lounge = Room::where('branch_id', $hq->id)->where('name', 'Executive Lounge')->first();
+        $lounge = Room::where('branch_id', $hq->id)->where('name', 'Showroom')->first();
         $drink = DrinkItem::where('branch_id', $hq->id)->first();
 
         Livewire::actingAs($employee)
@@ -271,7 +271,7 @@ class BookingSystemTest extends TestCase
             ->assertDontSee('guest-list.pdf');
     }
 
-    public function test_package_delivery_user_confirm_and_15_minute_auto_complete(): void
+    public function test_package_delivery_user_confirm_and_10_minute_auto_complete(): void
     {
         $hq = Branch::where('is_hq', true)->first();
         $employee = User::where('email', 'employee@company.com')->first();
@@ -306,13 +306,26 @@ class BookingSystemTest extends TestCase
             'auto_completed' => false,
         ]);
 
+        // Non-expired order (e.g. 5 minutes ago) should NOT be auto-completed
+        $recentOrder = DrinkOrder::create([
+            'user_id' => $employee->id,
+            'branch_id' => $hq->id,
+            'room_id' => $room->id,
+            'order_type' => 'instant',
+            'status' => 'in_delivery',
+            'in_delivery_at' => now()->subMinutes(5),
+        ]);
+
+        $this->assertSame(0, DrinkOrder::autoCompleteExpiredDeliveries());
+
+        // Expired order (11 minutes ago > 10m threshold) should auto-complete
         $forgotOrder = DrinkOrder::create([
             'user_id' => $employee->id,
             'branch_id' => $hq->id,
             'room_id' => $room->id,
             'order_type' => 'instant',
             'status' => 'in_delivery',
-            'in_delivery_at' => now()->subMinutes(16),
+            'in_delivery_at' => now()->subMinutes(11),
         ]);
 
         $this->assertSame(1, DrinkOrder::autoCompleteExpiredDeliveries());
@@ -320,6 +333,10 @@ class BookingSystemTest extends TestCase
             'id' => $forgotOrder->id,
             'status' => 'completed',
             'auto_completed' => true,
+        ]);
+        $this->assertDatabaseHas('drink_orders', [
+            'id' => $recentOrder->id,
+            'status' => 'in_delivery',
         ]);
     }
 
@@ -588,13 +605,13 @@ class BookingSystemTest extends TestCase
         $hq = Branch::where('is_hq', true)->first();
         $employee = User::where('email', 'employee@company.com')->first();
         $barista = User::where('email', 'barista@company.com')->first();
-        $lounge = Room::where('branch_id', $hq->id)->where('name', 'Executive Lounge')->first();
-        $americano = DrinkItem::where('branch_id', $hq->id)->where('name', 'Iced Americano')->first();
+        $showroom = Room::where('branch_id', $hq->id)->where('name', 'Showroom')->first();
+        $coffee = DrinkItem::where('branch_id', $hq->id)->where('name', 'Ice Milk Coffee')->first();
 
         $order = DrinkOrder::create([
             'user_id' => $employee->id,
             'branch_id' => $hq->id,
-            'room_id' => $lounge->id,
+            'room_id' => $showroom->id,
             'order_type' => 'instant',
             'status' => 'approved',
             'people_count' => 2,
@@ -602,11 +619,10 @@ class BookingSystemTest extends TestCase
             'delivery_time' => now()->addMinutes(4),
         ]);
         $order->items()->create([
-            'drink_item_id' => $americano->id,
+            'drink_item_id' => $coffee->id,
             'quantity' => 2,
             'selected_options' => [
-                'sugar' => '50%',
-                'coffee' => 'Single Shot',
+                'sugar' => 'Normal Sugar',
                 'ice' => 'Less Ice',
             ],
         ]);
@@ -616,21 +632,20 @@ class BookingSystemTest extends TestCase
         $response->assertStatus(200)
             ->assertSee('<title>អេក្រង់កន្លែងឆុងភេសជ្ជៈ</title>', false)
             ->assertSee('អេក្រង់កន្លែងឆុងភេសជ្ជៈ')
-            ->assertSee('CBVH ការិយាល័យកណ្តាល (បឹងកក់)')
-            ->assertSee('កន្លែងទទួលភ្ញៀវពិសេស')
-            ->assertSee('ជាន់ទី ១')
-            ->assertSee('អាមេរិកាណូទឹកកក')
-            ->assertSee('១ ស៊ុត')
-            ->assertSee('ទឹកកកតិច')
+            ->assertSee('ស៊ីប៊ីវីអេច CBVH')
+            ->assertSee('Showroom')
+            ->assertSee('ជាន់ផ្ទាល់ដី')
+            ->assertSee('កាហ្វេទឹកដោះគោ')
+            ->assertSee('ធម្មតា')
+            ->assertSee('តិច')
             ->assertSee('រសៀល')
             ->assertSee('ឆាប់បំផុត')
             ->assertSee('កម្ម៉ង់ម៉ោង')
             ->assertSee('១. ទទួលការកម្ម៉ង់')
             ->assertDontSee('Barista Kitchen Display')
             ->assertDontSee('Barista Display')
-            ->assertDontSee('Iced Americano')
-            ->assertDontSee('Executive Lounge')
-            ->assertDontSee('Single Shot')
+            ->assertDontSee('Ice Milk Coffee')
+            ->assertDontSee('Normal Sugar')
             ->assertDontSee('Less Ice')
             ->assertDontSee('Out of Stock')
             ->assertDontSee('អស់ស្តុក')
@@ -700,8 +715,8 @@ class BookingSystemTest extends TestCase
             ->get('/barista')
             ->assertStatus(200)
             ->assertSee('ផ្ញើទៅសាខា')
-            ->assertSee('CBVH សាខាបាក់ទូក')
-            ->assertSee('បន្ទប់ប្រជុំសាខា')
+            ->assertSee('ជាង បាក់ វណ្ណ ហុង (បាក់ទូក)')
+            ->assertSee('បាក់ទូក')
             ->assertSee('កាលវិភាគថ្ងៃខាងមុខ')
             ->assertDontSee('១. ទទួលការកម្ម៉ង់');
 

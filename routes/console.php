@@ -12,6 +12,6 @@ Artisan::command('inspire', function () {
 Artisan::command('drinks:auto-complete', function () {
     $count = DrinkOrder::autoCompleteExpiredDeliveries();
     $this->info("Auto-completed {$count} expired drink deliveries.");
-})->purpose('Auto-complete drink orders in delivery after 15 minutes');
+})->purpose('Auto-complete drink orders in delivery after 10 minutes');
 
 Schedule::command('drinks:auto-complete')->everyMinute();

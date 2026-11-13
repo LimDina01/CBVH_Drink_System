@@ -91,14 +91,14 @@ class DrinkOrder extends Model
     }
 
     /**
-     * Auto-complete orders that have been in 'in_delivery' for 15+ minutes.
+     * Auto-complete orders that have been in 'in_delivery' for 10+ minutes.
      */
     public static function autoCompleteExpiredDeliveries(bool $notifyTelegram = true): int
     {
         $expired = static::with('user')
             ->where('status', 'in_delivery')
             ->whereNotNull('in_delivery_at')
-            ->where('in_delivery_at', '<=', now()->subMinutes(15))
+            ->where('in_delivery_at', '<=', now()->subMinutes(10))
             ->get();
 
         if ($expired->isEmpty()) {
@@ -118,7 +118,7 @@ class DrinkOrder extends Model
                 try {
                     $telegram->sendMessage(
                         $order->user->telegram_chat_id,
-                        "✅ <b>Order #{$order->id} Auto-Completed:</b> Marked as delivered after 15 minutes. Need extra drinks or replacement? Open <b>My Orders</b> and tap <b>Order More / Spilled</b>."
+                        "✅ <b>Order #{$order->id} Auto-Completed:</b> Marked as delivered after 10 minutes. Need extra drinks or replacement? Open <b>My Orders</b> and tap <b>Order More / Spilled</b>."
                     );
                 } catch (\Throwable $e) {
                     // Never block polling if Telegram fails

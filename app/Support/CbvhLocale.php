@@ -65,8 +65,8 @@ class CbvhLocale
             return 'Orange Juice';
         }
 
-        // Remove prefixes like Hot, Iced, Warm, Cold, Fresh Squeezed, Fresh
-        $cleaned = preg_replace('/^(Hot|Iced|Warm|Cold|Fresh\s+Squeezed|Fresh)\s+/i', '', $trimmed);
+        // Remove prefixes like Hot, Iced, Ice, Warm, Cold, Fresh Squeezed, Fresh
+        $cleaned = preg_replace('/^(Hot|Iced|Ice|Warm|Cold|Fresh\s+Squeezed|Fresh)\s+/i', '', $trimmed);
 
         return trim((string) $cleaned);
     }

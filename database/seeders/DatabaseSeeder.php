@@ -15,28 +15,32 @@ class DatabaseSeeder extends Seeder
     {
         // 1. Branches
         $hq = Branch::create([
-            'name' => 'CBVH HQ (Boeung Kak)',
+            'name' => 'ស៊ីប៊ីវីអេច CBVH',
             'code' => 'HQ',
             'is_hq' => true,
-            'address' => 'Boeung Kak Flagship HQ, Phnom Penh',
+            'address' => 'Phnom Penh HQ',
             'is_active' => true,
         ]);
 
         $branch1 = Branch::create([
-            'name' => 'CBVH Branch (Bak Touk)',
-            'code' => 'BR-BT',
+            'name' => 'ជាង បាក់ វណ្ណ ហុង (បាក់ទូក) Cheang Bak Van Hong (BTK)',
+            'code' => 'BTK',
             'is_hq' => false,
-            'address' => 'Bak Touk Branch, Phnom Penh',
+            'address' => 'Bak Touk, Phnom Penh',
             'is_active' => true,
         ]);
 
-        // 2. Rooms (Include Lounge & Meeting Rooms at HQ + Branch Meeting Room)
-        Room::create(['branch_id' => $hq->id, 'name' => 'Executive Lounge', 'floor' => 'Floor 1']);
-        Room::create(['branch_id' => $hq->id, 'name' => 'Boardroom VIP', 'floor' => 'Floor 10']);
-        Room::create(['branch_id' => $hq->id, 'name' => 'Meeting Room A', 'floor' => 'Floor 2']);
-        Room::create(['branch_id' => $hq->id, 'name' => 'Meeting Room B', 'floor' => 'Floor 2']);
-        Room::create(['branch_id' => $hq->id, 'name' => 'Executive Office', 'floor' => 'Floor 9']);
-        Room::create(['branch_id' => $branch1->id, 'name' => 'Branch Meeting Room', 'floor' => 'Floor 1']);
+        // 2. Rooms (HQ Rooms + BTK Branch Room)
+        Room::create(['branch_id' => $hq->id, 'name' => 'Showroom', 'floor' => 'Ground Floor']);
+        Room::create(['branch_id' => $hq->id, 'name' => 'VIP 1', 'floor' => 'Floor 3']);
+        Room::create(['branch_id' => $hq->id, 'name' => 'VIP 2', 'floor' => 'Floor 3']);
+        Room::create(['branch_id' => $hq->id, 'name' => 'CEO Room', 'floor' => 'Floor 3']);
+        Room::create(['branch_id' => $hq->id, 'name' => 'បន្ទប់អគ្គនាយិកា', 'floor' => 'Floor 3']);
+        Room::create(['branch_id' => $hq->id, 'name' => 'F4 Meeting Room', 'floor' => 'Floor 4']);
+        Room::create(['branch_id' => $hq->id, 'name' => 'Hall 1', 'floor' => 'Floor 5']);
+        Room::create(['branch_id' => $hq->id, 'name' => 'Hall 2', 'floor' => 'Floor 5']);
+        Room::create(['branch_id' => $hq->id, 'name' => 'Hall 3', 'floor' => 'Floor 5']);
+        Room::create(['branch_id' => $branch1->id, 'name' => 'បាក់ទូក', 'floor' => 'Ground Floor']);
 
         // 3. Default System Roles (Demo / Web fallback)
         User::create([
@@ -75,45 +79,33 @@ class DatabaseSeeder extends Seeder
             'phone' => '+855 12 222 333',
         ]);
 
-        // 4. Drink Menu Items seeded for every branch
+        // 4. Official Drink Menu Items seeded for every branch
         $menuTemplate = [
             [
-                'name' => 'Iced Americano',
+                'name' => 'Ice Milk Coffee',
                 'category' => 'coffee',
-                'description' => 'Espresso diluted with chilled water and poured over ice.',
+                'description' => 'Traditional iced milk coffee brewed fresh with rich condensed milk.',
                 'options_config' => [
-                    'sugar_levels' => ['0%', '25%', '50%', '75%', '100%'],
-                    'coffee_levels' => ['Single Shot', 'Double Shot', 'Decaf'],
-                    'ice_levels' => ['No Ice', 'Less Ice', 'Normal Ice'],
+                    'sugar_levels' => ['No Sugar', 'Less Sugar', 'Normal Sugar'],
+                    'ice_levels' => ['Less Ice', 'Normal Ice', 'More Ice', 'Separate Ice'],
                 ],
             ],
             [
-                'name' => 'Hot Latte',
-                'category' => 'coffee',
-                'description' => 'Rich espresso with steamed velvety milk and micro-foam.',
-                'options_config' => [
-                    'sugar_levels' => ['0%', '25%', '50%', '75%', '100%'],
-                    'coffee_levels' => ['Single Shot', 'Double Shot', 'Decaf'],
-                    'milk_types' => ['Fresh Whole Milk', 'Oat Milk', 'Almond Milk', 'Soy Milk'],
-                ],
-            ],
-            [
-                'name' => 'Iced Green Tea Latte',
+                'name' => 'Red Lemon Tea',
                 'category' => 'tea',
-                'description' => 'Pure Japanese matcha green tea whisked with fresh cold milk.',
+                'description' => 'Refreshing brewed red tea infused with fresh fragrant lemon juice.',
                 'options_config' => [
-                    'sugar_levels' => ['0%', '25%', '50%', '75%', '100%'],
-                    'ice_levels' => ['No Ice', 'Less Ice', 'Normal Ice'],
-                    'milk_types' => ['Fresh Whole Milk', 'Oat Milk'],
+                    'sugar_levels' => ['No Sugar', 'Less Sugar', 'Normal Sugar'],
+                    'ice_levels' => ['Less Ice', 'Normal Ice', 'More Ice', 'Separate Ice'],
                 ],
             ],
             [
-                'name' => 'Fresh Squeezed Orange Juice',
-                'category' => 'juice',
-                'description' => '100% freshly pressed natural orange juice.',
+                'name' => 'Samrong Basil Seeds',
+                'category' => 'tea',
+                'description' => 'Traditional cooling herbal beverage with malva nut (Samrong) and basil seeds.',
                 'options_config' => [
-                    'sugar_levels' => ['0% (Natural)', '50%'],
-                    'ice_levels' => ['No Ice', 'Normal Ice'],
+                    'sugar_levels' => ['No Sugar', 'Less Sugar', 'Normal Sugar'],
+                    'ice_levels' => ['Less Ice', 'Normal Ice', 'More Ice', 'Separate Ice'],
                 ],
             ],
         ];

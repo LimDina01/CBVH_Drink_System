@@ -277,7 +277,7 @@ new class extends Component
                 'Ordered At',
                 'In Delivery At',
                 'Completed At',
-                'Auto Completed (15m)',
+                'Auto Completed (10m)',
             ]);
 
             foreach ($orders as $order) {
