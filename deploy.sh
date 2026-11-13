@@ -32,7 +32,7 @@ sudo chown -R www-data:www-data storage bootstrap/cache database
 sudo chmod -R 775 storage bootstrap/cache database
 
 # 8. Reload PHP-FPM
-sudo systemctl reload php8.3-fpm || sudo systemctl reload php8.2-fpm || true
+sudo systemctl reload php8.5-fpm || sudo systemctl reload php8.4-fpm || sudo systemctl reload php8.3-fpm || sudo systemctl reload php-fpm || true
 
 echo "✅ Deployment completed successfully!"
 
