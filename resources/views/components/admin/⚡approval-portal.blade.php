@@ -882,17 +882,7 @@ new class extends Component
                         </button>
                     </div>
 
-                    <div class="bg-white dark:bg-[#241C19] rounded-2xl border border-[#E8DDD6] p-5 shadow-2xs space-y-3">
-                        <h3 class="font-bold text-sm">🤖 {{ __('cbvh.bot_webhook') }}</h3>
-                        <p class="text-xs text-[#7C6A60] leading-relaxed">{{ __('cbvh.bot_webhook_desc') }}</p>
-                        <div class="p-2.5 rounded-xl bg-[#FAF6F3] border border-[#E8DDD6] text-[11px] break-all font-mono text-[#7C6A60]">
-                            {{ $currentHostUrl }}/telegram/webhook
-                        </div>
-                        <button wire:click="registerWebhook"
-                                class="w-full py-3 bg-[#9E6B55] hover:bg-[#835440] text-white font-bold text-xs rounded-xl shadow-xs transition cursor-pointer">
-                            🔗 {{ __('cbvh.activate_webhook') }}
-                        </button>
-                    </div>
+
                 </div>
             </div>
         @endif
