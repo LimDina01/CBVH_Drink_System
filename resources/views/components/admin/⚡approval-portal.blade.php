@@ -543,12 +543,12 @@ new class extends Component
                     </div>
                 </div>
 
-                <!-- Row 2: Comprehensive Multi-Filter (Search + Branch + Staff + Type + Status + Custom Dates) -->
-                <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2.5 pt-2 border-t border-[#FAF6F3] dark:border-[#3D2F29]">
+                <!-- Row 2: Comprehensive Multi-Filter (Search + Branch + Staff + Type + Status + From Date + To Date) -->
+                <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-2.5 pt-2 border-t border-[#FAF6F3] dark:border-[#3D2F29]">
                     <!-- Live Search -->
                     <div>
-                        <label class="block text-[10px] font-bold uppercase text-[#7C6A60] mb-1">🔍 {{ __('cbvh.search_orders_placeholder') }}</label>
-                        <input type="text" wire:model.live.debounce.250ms="searchQuery" placeholder="{{ __('cbvh.search_orders_placeholder') }}"
+                        <label class="block text-[10px] font-bold uppercase text-[#7C6A60] mb-1">🔍 {{ __('cbvh.search') }}</label>
+                        <input type="text" wire:model.live.debounce.250ms="searchQuery" placeholder="{{ __('cbvh.search_placeholder') }}"
                                class="w-full text-xs p-2 rounded-xl border border-[#E8DDD6] dark:border-[#3D2F29] bg-[#FAF6F3] dark:bg-[#1E1715] font-semibold text-[#2C211C] dark:text-[#F5EDE7]" />
                     </div>
 
@@ -598,16 +598,16 @@ new class extends Component
                         </select>
                     </div>
 
-                    <!-- Custom Date From/To -->
-                    <div class="flex items-center space-x-1.5">
-                        <div class="flex-1 min-w-0">
-                            <label class="block text-[10px] font-bold uppercase text-[#7C6A60] mb-1 truncate">{{ __('cbvh.from_date') }}</label>
-                            <input type="date" wire:model.live="dateFrom" class="w-full text-[11px] p-2 rounded-xl border border-[#E8DDD6] dark:border-[#3D2F29] bg-[#FAF6F3] dark:bg-[#1E1715] font-semibold text-[#2C211C] dark:text-[#F5EDE7]" />
-                        </div>
-                        <div class="flex-1 min-w-0">
-                            <label class="block text-[10px] font-bold uppercase text-[#7C6A60] mb-1 truncate">{{ __('cbvh.to_date') }}</label>
-                            <input type="date" wire:model.live="dateTo" class="w-full text-[11px] p-2 rounded-xl border border-[#E8DDD6] dark:border-[#3D2F29] bg-[#FAF6F3] dark:bg-[#1E1715] font-semibold text-[#2C211C] dark:text-[#F5EDE7]" />
-                        </div>
+                    <!-- From Date -->
+                    <div>
+                        <label class="block text-[10px] font-bold uppercase text-[#7C6A60] mb-1">📅 {{ __('cbvh.from_date') }}</label>
+                        <input type="date" wire:model.live="dateFrom" class="w-full text-xs p-2 rounded-xl border border-[#E8DDD6] dark:border-[#3D2F29] bg-[#FAF6F3] dark:bg-[#1E1715] font-semibold text-[#2C211C] dark:text-[#F5EDE7]" />
+                    </div>
+
+                    <!-- To Date -->
+                    <div>
+                        <label class="block text-[10px] font-bold uppercase text-[#7C6A60] mb-1">📅 {{ __('cbvh.to_date') }}</label>
+                        <input type="date" wire:model.live="dateTo" class="w-full text-xs p-2 rounded-xl border border-[#E8DDD6] dark:border-[#3D2F29] bg-[#FAF6F3] dark:bg-[#1E1715] font-semibold text-[#2C211C] dark:text-[#F5EDE7]" />
                     </div>
                 </div>
             </div>
