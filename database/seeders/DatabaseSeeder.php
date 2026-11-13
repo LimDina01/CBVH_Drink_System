@@ -45,6 +45,7 @@ class DatabaseSeeder extends Seeder
         // 3. Default System Roles (Demo / Web fallback)
         User::create([
             'name' => 'System Admin',
+            'employee_id' => 'ADM-001',
             'email' => 'admin@company.com',
             'password' => Hash::make('password'),
             'role' => 'admin',
@@ -54,6 +55,7 @@ class DatabaseSeeder extends Seeder
 
         User::create([
             'name' => 'Linda Chen (Barista)',
+            'employee_id' => 'BAR-001',
             'email' => 'barista@company.com',
             'password' => Hash::make('password'),
             'role' => 'barista',
@@ -63,6 +65,7 @@ class DatabaseSeeder extends Seeder
 
         User::create([
             'name' => 'Emily Clark (HQ Staff)',
+            'employee_id' => 'HQ-001',
             'email' => 'employee@company.com',
             'password' => Hash::make('password'),
             'role' => 'employee',
@@ -72,6 +75,7 @@ class DatabaseSeeder extends Seeder
 
         User::create([
             'name' => 'Dara Sok (Branch Staff)',
+            'employee_id' => 'BTK-001',
             'email' => 'branch.staff@company.com',
             'password' => Hash::make('password'),
             'role' => 'employee',

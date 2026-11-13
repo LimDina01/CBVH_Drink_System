@@ -1,12 +1,15 @@
 <?php
 
 use Livewire\Component;
+use App\Models\User;
 use App\Services\TelegramService;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Hash;
 
 new class extends Component
 {
-    public string $email = '';
+    public string $loginId = '';
+    public string $email = ''; // alias for backwards compatibility
     public string $password = '';
     public ?string $telegramInitData = null;
     public ?string $errorMessage = null;
@@ -32,18 +35,25 @@ new class extends Component
     {
         $this->errorMessage = null;
 
-        $this->validate([
-            'email' => 'required|email',
-            'password' => 'required',
-        ]);
+        $input = trim($this->loginId ?: $this->email);
 
-        if (!Auth::attempt(['email' => trim($this->email), 'password' => $this->password], remember: true)) {
+        if (empty($input) || empty($this->password)) {
             $this->errorMessage = __('cbvh.invalid_credentials');
             return;
         }
 
+        $user = User::where('employee_id', $input)
+            ->orWhere('email', $input)
+            ->first();
+
+        if (!$user || !Hash::check($this->password, $user->password)) {
+            $this->errorMessage = __('cbvh.invalid_credentials');
+            return;
+        }
+
+        Auth::login($user, remember: true);
+
         session()->regenerate();
-        $user = Auth::user();
 
         if (!empty($this->telegramInitData)) {
             app(TelegramService::class)->bindTelegramToUser($user, $this->telegramInitData);
@@ -108,10 +118,10 @@ new class extends Component
 
         <form wire:submit="login" class="space-y-4">
             <div>
-                <label class="block text-xs font-semibold text-[#7C6A60] dark:text-[#BBA79D] mb-1.5">{{ __('cbvh.email') }}</label>
-                <input type="email" wire:model="email" required autofocus placeholder="name@company.com"
+                <label class="block text-xs font-semibold text-[#7C6A60] dark:text-[#BBA79D] mb-1.5">{{ __('cbvh.login_id') }}</label>
+                <input type="text" wire:model="loginId" required autofocus placeholder="{{ __('cbvh.login_id_placeholder') }}"
                        class="w-full text-sm px-4 py-3 rounded-xl border border-[#E8DDD6] dark:border-[#3D2F29] bg-[#FAF6F3] dark:bg-[#1A1412] text-[#2C211C] dark:text-[#F5EDE7] focus:border-[#9E6B55] focus:outline-hidden" />
-                @error('email') <span class="text-[11px] text-rose-500 mt-1 block">{{ $message }}</span> @enderror
+                @error('loginId') <span class="text-[11px] text-rose-500 mt-1 block">{{ $message }}</span> @enderror
             </div>
 
             <div>

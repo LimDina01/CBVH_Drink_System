@@ -22,10 +22,13 @@ return [
     'login_subtitle' => 'Sign in with your CBVH account to access drink ordering',
     'login_telegram_hint' => 'Sign in once to link your Telegram automatically for future visits.',
     'email' => 'Email Address',
+    'employee_id' => 'Employee ID',
+    'login_id' => 'Employee ID or Email',
+    'login_id_placeholder' => 'e.g. EMP-001 or name@company.com',
     'password' => 'Password',
     'sign_in' => 'Sign In',
     'signing_in' => 'Signing in...',
-    'invalid_credentials' => 'Invalid email or password.',
+    'invalid_credentials' => 'Invalid Employee ID / Email or password.',
     'telegram_linked_msg' => 'Telegram account linked successfully!',
 
     // Mini App Tabs & Order Modes

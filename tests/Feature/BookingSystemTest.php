@@ -12,6 +12,7 @@ use Carbon\Carbon;
 use Database\Seeders\DatabaseSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 use Livewire\Livewire;
@@ -420,7 +421,7 @@ class BookingSystemTest extends TestCase
         Livewire::actingAs($admin)
             ->test('admin.approval-portal')
             ->set('newName', 'Bopha Meas')
-            ->set('newEmail', 'bopha@company.com')
+            ->set('newEmployeeId', 'EMP-777')
             ->set('newPassword', 'secret123')
             ->set('newBranchId', $hq->id)
             ->set('newRole', 'employee')
@@ -430,10 +431,21 @@ class BookingSystemTest extends TestCase
             ->assertFileDownloaded();
 
         $this->assertDatabaseHas('users', [
-            'email' => 'bopha@company.com',
+            'name' => 'Bopha Meas',
+            'employee_id' => 'EMP-777',
             'branch_id' => $hq->id,
             'role' => 'employee',
         ]);
+
+        // Verify the newly created staff member can log in using their Employee ID
+        Livewire::test('auth.login-page')
+            ->set('loginId', 'EMP-777')
+            ->set('password', 'secret123')
+            ->call('login')
+            ->assertRedirect('/');
+
+        $this->assertAuthenticated();
+        $this->assertSame('EMP-777', Auth::user()->employee_id);
     }
 
     public function test_admin_can_export_drink_totals_summary_and_drinks_are_grouped_by_base_name(): void

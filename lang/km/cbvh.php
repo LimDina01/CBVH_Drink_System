@@ -22,10 +22,13 @@ return [
     'login_subtitle' => 'សូមចូលដោយប្រើគណនី CBVH របស់អ្នកដើម្បីកម្ម៉ង់ភេសជ្ជៈ',
     'login_telegram_hint' => 'ចូលម្តងដើម្បីភ្ជាប់ Telegram ដោយស្វ័យប្រវត្តិសម្រាប់លើកក្រោយ។',
     'email' => 'អ៊ីមែល',
+    'employee_id' => 'អត្តលេខបុគ្គលិក',
+    'login_id' => 'អត្តលេខបុគ្គលិក ឬ អ៊ីមែល',
+    'login_id_placeholder' => 'ឧទាហរណ៍៖ EMP-001 ឬ អ៊ីមែល',
     'password' => 'ពាក្យសម្ងាត់',
     'sign_in' => 'ចូលប្រព័ន្ធ',
     'signing_in' => 'កំពុងចូល...',
-    'invalid_credentials' => 'អ៊ីមែល ឬពាក្យសម្ងាត់មិនត្រឹមត្រូវទេ។',
+    'invalid_credentials' => 'អត្តលេខ/អ៊ីមែល ឬពាក្យសម្ងាត់មិនត្រឹមត្រូវទេ។',
     'telegram_linked_msg' => 'បានភ្ជាប់គណនី Telegram ដោយជោគជ័យ!',
 
     // Mini App Tabs & Order Modes

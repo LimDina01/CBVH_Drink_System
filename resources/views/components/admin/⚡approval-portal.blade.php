@@ -29,7 +29,7 @@ new class extends Component
 
     // --- Create Staff Form ---
     public string $newName = '';
-    public string $newEmail = '';
+    public string $newEmployeeId = '';
     public string $newPassword = '';
     public string $newRole = 'employee';
     public $newBranchId = null;
@@ -80,24 +80,28 @@ new class extends Component
     {
         $this->validate([
             'newName' => 'required|min:2',
-            'newEmail' => 'required|email|unique:users,email',
+            'newEmployeeId' => 'required|min:2|unique:users,employee_id',
             'newPassword' => 'required|min:4',
             'newRole' => 'required|in:employee,barista,admin',
             'newBranchId' => 'required|exists:branches,id',
         ]);
 
+        $cleanEmpId = strtoupper(trim($this->newEmployeeId));
+        $generatedEmail = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', $cleanEmpId)) . '@cbvh.internal';
+
         User::create([
             'name' => trim($this->newName),
-            'email' => trim($this->newEmail),
+            'employee_id' => $cleanEmpId,
+            'email' => $generatedEmail,
             'password' => Hash::make($this->newPassword),
             'role' => $this->newRole,
             'branch_id' => $this->newBranchId,
         ]);
 
         $this->newName = '';
-        $this->newEmail = '';
+        $this->newEmployeeId = '';
         $this->newPassword = '';
-        $this->flashMessage = 'Staff account created! They can now sign in once to bind Telegram.';
+        $this->flashMessage = "Staff account created for {$cleanEmpId}! They can now sign in with this Employee ID.";
         $this->flashType = 'success';
     }
 
@@ -786,7 +790,7 @@ new class extends Component
                         <form wire:submit="createStaffAccount" class="grid grid-cols-1 sm:grid-cols-5 gap-2.5">
                             <input type="text" wire:model="newName" placeholder="{{ __('cbvh.full_name') }}" required
                                    class="text-xs p-2.5 rounded-xl border border-[#E8DDD6] bg-[#FAF6F3]" />
-                            <input type="email" wire:model="newEmail" placeholder="{{ __('cbvh.email') }}" required
+                            <input type="text" wire:model="newEmployeeId" placeholder="{{ __('cbvh.employee_id') }} (e.g. EMP-001)" required
                                    class="text-xs p-2.5 rounded-xl border border-[#E8DDD6] bg-[#FAF6F3]" />
                             <input type="password" wire:model="newPassword" placeholder="{{ __('cbvh.password') }}" required
                                    class="text-xs p-2.5 rounded-xl border border-[#E8DDD6] bg-[#FAF6F3]" />
@@ -806,7 +810,7 @@ new class extends Component
                                 </button>
                             </div>
                         </form>
-                        @error('newEmail') <span class="text-xs text-rose-500">{{ $message }}</span> @enderror
+                        @error('newEmployeeId') <span class="text-xs text-rose-500">{{ $message }}</span> @enderror
                         @error('newPassword') <span class="text-xs text-rose-500">{{ $message }}</span> @enderror
                     </div>
 
@@ -830,7 +834,8 @@ new class extends Component
                                             @endif
                                         </div>
                                         <div class="text-[11px] text-[#7C6A60]">
-                                            {{ $u->email }} {{ $u->telegram_username ? '• @'.$u->telegram_username : '' }}
+                                            <span class="font-mono font-semibold text-[#835440] dark:text-[#E8CFC1]">{{ $u->employee_id ?: 'NO ID' }}</span>
+                                            {{ $u->telegram_username ? '• @'.$u->telegram_username : ($u->email ? '• '.$u->email : '') }}
                                         </div>
                                     </div>
 
