@@ -206,5 +206,18 @@ return [
     'bot_webhook' => 'Telegram Bot Webhook',
     'bot_webhook_desc' => 'Click once whenever your Cloudflare URL changes so Telegram buttons and /start connect here.',
     'activate_webhook' => 'Activate Bot Webhook on This URL',
+    'drink_summary_title' => 'Drink Summary by Total Cups',
+    'export_drink_totals' => 'Export Drink Summary (CSV)',
+    'show_recipe_details' => 'Show customizations (sugar/ice)',
+    'base_drinks' => [
+        'Americano' => 'Americano',
+        'Latte' => 'Latte',
+        'Green Tea' => 'Green Tea',
+        'Orange Juice' => 'Orange Juice',
+        'Cappuccino' => 'Cappuccino',
+        'Mocha' => 'Mocha',
+        'Chocolate' => 'Chocolate',
+        'Espresso' => 'Espresso',
+    ],
 ];
 

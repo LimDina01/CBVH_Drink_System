@@ -29,6 +29,7 @@ new class extends Component
 
     // --- Settings ---
     public $enforceWorkingHours = true;
+    public bool $showOptionsInTable = false;
     public $flashMessage = null;
     public $flashType = 'success';
 
@@ -230,12 +231,14 @@ new class extends Component
             ]);
 
             foreach ($orders as $order) {
-                $drinksList = $order->items->map(function ($it) {
-                    $opts = !empty($it->selected_options)
-                        ? ' [' . implode(', ', array_map(fn($k, $v) => "$k:$v", array_keys($it->selected_options), $it->selected_options)) . ']'
-                        : '';
-                    return "{$it->quantity}x {$it->drinkItem?->name}{$opts}";
-                })->implode(' | ');
+                // Group drinks by clean base name (e.g. Hot Latte + Iced Latte => Latte) without sugar/ice clutter
+                $drinksList = $order->items
+                    ->groupBy(fn($it) => \App\Support\CbvhLocale::toBaseDrinkName($it->drinkItem?->name))
+                    ->map(function ($group, $baseName) {
+                        $qty = $group->sum('quantity');
+                        return "{$qty}x {$baseName}";
+                    })
+                    ->implode(' | ');
 
                 fputcsv($handle, [
                     $order->id,
@@ -265,12 +268,79 @@ new class extends Component
         ]);
     }
 
+    public function exportDrinkTotalsCsv()
+    {
+        $orders = $this->buildFilteredOrdersQuery()->with('items.drinkItem')->get();
+        $filename = 'cbvh-drink-summary-' . now()->format('Y-m-d_His') . '.csv';
+
+        return response()->streamDownload(function () use ($orders) {
+            $handle = fopen('php://output', 'w');
+            fwrite($handle, "\xEF\xBB\xBF");
+
+            fputcsv($handle, [
+                'Drink Item',
+                'Category',
+                'Total Cups Ordered',
+            ]);
+
+            $summary = [];
+            foreach ($orders as $order) {
+                foreach ($order->items as $it) {
+                    $base = \App\Support\CbvhLocale::toBaseDrinkName($it->drinkItem?->name ?? 'Other');
+                    $category = $it->drinkItem?->category ?? 'drink';
+                    if (!isset($summary[$base])) {
+                        $summary[$base] = [
+                            'name' => $base,
+                            'category' => $category,
+                            'cups' => 0,
+                        ];
+                    }
+                    $summary[$base]['cups'] += (int) $it->quantity;
+                }
+            }
+
+            uasort($summary, fn($a, $b) => $b['cups'] <=> $a['cups']);
+
+            foreach ($summary as $row) {
+                fputcsv($handle, [
+                    $row['name'],
+                    ucfirst($row['category']),
+                    $row['cups'],
+                ]);
+            }
+
+            fputcsv($handle, []);
+            fputcsv($handle, ['TOTAL ALL DRINKS', '', array_sum(array_column($summary, 'cups'))]);
+
+            fclose($handle);
+        }, $filename, [
+            'Content-Type' => 'text/csv; charset=UTF-8',
+        ]);
+    }
+
     public function with()
     {
         DrinkOrder::autoCompleteExpiredDeliveries();
 
         $orders = $this->buildFilteredOrdersQuery()->get();
         $totalCups = $orders->sum(fn($o) => $o->items->sum('quantity'));
+
+        $drinkTotals = [];
+        foreach ($orders as $order) {
+            foreach ($order->items as $it) {
+                $base = \App\Support\CbvhLocale::toBaseDrinkName($it->drinkItem?->name ?? 'Other');
+                $category = $it->drinkItem?->category ?? 'drink';
+                if (!isset($drinkTotals[$base])) {
+                    $drinkTotals[$base] = [
+                        'name' => $base,
+                        'category' => $category,
+                        'cups' => 0,
+                    ];
+                }
+                $drinkTotals[$base]['cups'] += (int) $it->quantity;
+            }
+        }
+        uasort($drinkTotals, fn($a, $b) => $b['cups'] <=> $a['cups']);
 
         $users = User::with('branch')
             ->orderByRaw('CASE WHEN telegram_chat_id IS NOT NULL THEN 0 ELSE 1 END')
@@ -285,6 +355,7 @@ new class extends Component
             'quickCount' => $orders->where('order_type', 'instant')->count(),
             'meetingCount' => $orders->where('order_type', 'meeting')->count(),
             'extendCount' => $orders->where('order_type', 'extend')->count(),
+            'drinkTotals' => $drinkTotals,
             'users' => $users,
             'currentHostUrl' => request()->getSchemeAndHttpHost(),
         ];
@@ -424,12 +495,58 @@ new class extends Component
                     </div>
                 </div>
 
-                <button wire:click="exportCsv"
-                        class="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs flex items-center space-x-2 transition cursor-pointer shrink-0">
-                    <span>📥</span>
-                    <span>{{ __('cbvh.export_csv') }}</span>
-                </button>
+                <div class="flex items-center space-x-2 shrink-0">
+                    <button wire:click="exportCsv"
+                            class="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs flex items-center space-x-1.5 transition cursor-pointer">
+                        <span>📥</span>
+                        <span>{{ __('cbvh.export_csv') }}</span>
+                    </button>
+                    <button wire:click="exportDrinkTotalsCsv"
+                            class="px-4 py-2.5 bg-[#9E6B55] hover:bg-[#835440] text-white font-bold text-xs rounded-xl shadow-xs flex items-center space-x-1.5 transition cursor-pointer">
+                        <span>📊</span>
+                        <span>{{ __('cbvh.export_drink_totals') }}</span>
+                    </button>
+                </div>
             </div>
+
+            <!-- Drink Totals Summary Breakdown -->
+            @if(!empty($drinkTotals))
+                <div class="bg-white dark:bg-[#241C19] p-4 rounded-2xl border border-[#E8DDD6] dark:border-[#3D2F29] shadow-2xs space-y-3">
+                    <div class="flex flex-wrap items-center justify-between gap-2 border-b border-[#FAF6F3] dark:border-[#3D2F29] pb-2.5">
+                        <div class="flex items-center space-x-2">
+                            <span class="text-base">☕</span>
+                            <h3 class="text-xs font-black uppercase tracking-wider text-[#2C211C] dark:text-[#F5EDE7]">
+                                {{ __('cbvh.drink_summary_title') }}
+                            </h3>
+                            <span class="text-[11px] font-bold text-[#9E6B55] bg-[#F5EDE7] dark:bg-[#3A2C26] px-2.5 py-0.5 rounded-full">
+                                {{ $totalCups }} {{ __('cbvh.total_cups') }}
+                            </span>
+                        </div>
+                        <label class="inline-flex items-center space-x-2 text-[11px] font-bold text-[#7C6A60] cursor-pointer select-none">
+                            <input type="checkbox" wire:model.live="showOptionsInTable" class="rounded text-[#9E6B55] focus:ring-[#9E6B55]" />
+                            <span>{{ __('cbvh.show_recipe_details') }}</span>
+                        </label>
+                    </div>
+
+                    <div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-2.5">
+                        @foreach($drinkTotals as $baseName => $stat)
+                            <div class="p-3 rounded-xl bg-[#FAF6F3] dark:bg-[#1E1715] border border-[#E8DDD6]/60 dark:border-[#3D2F29] flex items-center justify-between shadow-2xs">
+                                <div class="min-w-0 pr-2">
+                                    <div class="font-black text-xs text-[#2C211C] dark:text-[#F5EDE7] truncate">
+                                        {{ \App\Support\CbvhLocale::baseDrink($baseName) }}
+                                    </div>
+                                    <div class="text-[9px] uppercase tracking-wider text-[#7C6A60]">
+                                        {{ $stat['category'] }}
+                                    </div>
+                                </div>
+                                <span class="text-sm font-black px-2.5 py-1 rounded-lg bg-[#9E6B55] text-white shrink-0 shadow-2xs">
+                                    {{ $stat['cups'] }}
+                                </span>
+                            </div>
+                        @endforeach
+                    </div>
+                </div>
+            @endif
 
             <!-- Report Table -->
             <div class="bg-white dark:bg-[#241C19] rounded-2xl border border-[#E8DDD6] dark:border-[#3D2F29] shadow-2xs overflow-x-auto">
@@ -469,14 +586,26 @@ new class extends Component
                                     <div class="text-[10px] text-[#7C6A60]">{{ $order->people_count }} {{ __('cbvh.pax') }}</div>
                                 </td>
                                 <td class="py-3.5 px-4 space-y-0.5 max-w-xs">
-                                    @foreach($order->items as $it)
-                                        <div>
-                                            <strong>{{ $it->quantity }}×</strong> {{ \App\Support\CbvhLocale::drink($it->drinkItem?->name) }}
-                                            @if(!empty($it->selected_options))
-                                                <span class="text-[10px] text-[#7C6A60]">({{ collect($it->selected_options)->map(fn($v) => \App\Support\CbvhLocale::option($v))->implode(', ') }})</span>
-                                            @endif
-                                        </div>
-                                    @endforeach
+                                    @if($showOptionsInTable)
+                                        @foreach($order->items as $it)
+                                            <div>
+                                                <strong>{{ $it->quantity }}×</strong> {{ \App\Support\CbvhLocale::drink($it->drinkItem?->name) }}
+                                                @if(!empty($it->selected_options))
+                                                    <span class="text-[10px] text-[#7C6A60]">({{ collect($it->selected_options)->map(fn($v) => \App\Support\CbvhLocale::option($v))->implode(', ') }})</span>
+                                                @endif
+                                            </div>
+                                        @endforeach
+                                    @else
+                                        @php
+                                            $groupedDrinks = $order->items->groupBy(fn($it) => \App\Support\CbvhLocale::toBaseDrinkName($it->drinkItem?->name));
+                                        @endphp
+                                        @foreach($groupedDrinks as $bName => $gItems)
+                                            <div class="font-bold text-xs text-[#2C211C] dark:text-[#F5EDE7]">
+                                                <span class="text-[#9E6B55] font-black mr-1">{{ $gItems->sum('quantity') }}×</span>
+                                                {{ \App\Support\CbvhLocale::baseDrink($bName) }}
+                                            </div>
+                                        @endforeach
+                                    @endif
                                     @if($order->notes)
                                         <div class="text-[10px] italic text-[#9E6B55]">"{{ $order->notes }}"</div>
                                     @endif

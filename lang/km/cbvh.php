@@ -251,5 +251,18 @@ return [
     'bot_webhook' => 'Telegram Bot Webhook',
     'bot_webhook_desc' => 'ចុចម្តងរាល់ពេល URL Cloudflare ផ្លាស់ប្តូរ ដើម្បីភ្ជាប់ប៊ូតុង Telegram និង /start។',
     'activate_webhook' => 'ភ្ជាប់ Bot Webhook លើ URL នេះ',
+    'drink_summary_title' => 'សរុបចំនួនកែវតាមប្រភេទភេសជ្ជៈ',
+    'export_drink_totals' => 'ទាញយកសរុបភេសជ្ជៈ (CSV)',
+    'show_recipe_details' => 'បង្ហាញកម្រិតស្ករ/ទឹកកក',
+    'base_drinks' => [
+        'Americano' => 'អាមេរិកាណូ',
+        'Latte' => 'ឡាតេ',
+        'Green Tea' => 'តែបៃតង',
+        'Orange Juice' => 'ទឹកក្រូច',
+        'Cappuccino' => 'កាពូឈីណូ',
+        'Mocha' => 'ម៉ូកា',
+        'Chocolate' => 'សូកូឡា',
+        'Espresso' => 'អេសប្រេសូ',
+    ],
 ];
 

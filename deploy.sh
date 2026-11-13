@@ -35,3 +35,4 @@ sudo chmod -R 775 storage bootstrap/cache database
 sudo systemctl reload php8.3-fpm || sudo systemctl reload php8.2-fpm || true
 
 echo "✅ Deployment completed successfully!"
+

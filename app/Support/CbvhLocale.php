@@ -49,6 +49,44 @@ class CbvhLocale
         return self::map('drinks', $name);
     }
 
+    public static function toBaseDrinkName(?string $name): string
+    {
+        if ($name === null || $name === '') {
+            return '';
+        }
+
+        $trimmed = trim($name);
+
+        if (preg_match('/green\s*tea/i', $trimmed)) {
+            return 'Green Tea';
+        }
+
+        if (preg_match('/orange\s*juice/i', $trimmed)) {
+            return 'Orange Juice';
+        }
+
+        // Remove prefixes like Hot, Iced, Warm, Cold, Fresh Squeezed, Fresh
+        $cleaned = preg_replace('/^(Hot|Iced|Warm|Cold|Fresh\s+Squeezed|Fresh)\s+/i', '', $trimmed);
+
+        return trim((string) $cleaned);
+    }
+
+    public static function baseDrink(?string $name): string
+    {
+        $baseName = self::toBaseDrinkName($name);
+
+        if (app()->getLocale() !== 'km') {
+            return $baseName;
+        }
+
+        $dictionary = Lang::get('cbvh.base_drinks');
+        if (is_array($dictionary) && array_key_exists($baseName, $dictionary)) {
+            return (string) $dictionary[$baseName];
+        }
+
+        return $baseName;
+    }
+
     public static function drinkDescription(?string $description): string
     {
         return self::map('drink_descriptions', $description);

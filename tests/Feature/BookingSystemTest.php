@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\Branch;
 use App\Models\DrinkItem;
 use App\Models\DrinkOrder;
+use App\Models\DrinkOrderItem;
 use App\Models\Room;
 use App\Models\User;
 use Carbon\Carbon;
@@ -416,6 +417,62 @@ class BookingSystemTest extends TestCase
             'branch_id' => $hq->id,
             'role' => 'employee',
         ]);
+    }
+
+    public function test_admin_can_export_drink_totals_summary_and_drinks_are_grouped_by_base_name(): void
+    {
+        $hq = Branch::where('code', 'HQ')->first();
+        $admin = User::where('role', 'admin')->first();
+        $room = Room::where('branch_id', $hq->id)->first();
+
+        $latte = DrinkItem::firstOrCreate([
+            'branch_id' => $hq->id,
+            'name' => 'Hot Latte',
+        ], [
+            'category' => 'coffee',
+            'description' => 'Test Latte',
+        ]);
+
+        $greenTea = DrinkItem::firstOrCreate([
+            'branch_id' => $hq->id,
+            'name' => 'Iced Green Tea Latte',
+        ], [
+            'category' => 'tea',
+            'description' => 'Test Matcha',
+        ]);
+
+        $order = DrinkOrder::create([
+            'user_id' => $admin->id,
+            'branch_id' => $hq->id,
+            'room_id' => $room->id,
+            'order_type' => 'instant',
+            'status' => 'completed',
+            'people_count' => 3,
+        ]);
+
+        DrinkOrderItem::create([
+            'drink_order_id' => $order->id,
+            'drink_item_id' => $latte->id,
+            'quantity' => 2,
+            'selected_options' => ['sugar' => '50%', 'milk' => 'Oat Milk'],
+        ]);
+
+        DrinkOrderItem::create([
+            'drink_order_id' => $order->id,
+            'drink_item_id' => $greenTea->id,
+            'quantity' => 1,
+            'selected_options' => ['sugar' => '0%'],
+        ]);
+
+        $this->assertSame('Latte', \App\Support\CbvhLocale::toBaseDrinkName('Hot Latte'));
+        $this->assertSame('Latte', \App\Support\CbvhLocale::toBaseDrinkName('Iced Latte'));
+        $this->assertSame('Green Tea', \App\Support\CbvhLocale::toBaseDrinkName('Iced Green Tea Latte'));
+        $this->assertSame('Americano', \App\Support\CbvhLocale::toBaseDrinkName('Iced Americano'));
+
+        Livewire::actingAs($admin)
+            ->test('admin.approval-portal')
+            ->call('exportDrinkTotalsCsv')
+            ->assertFileDownloaded();
     }
 
     public function test_telegram_webhook_does_not_auto_create_unverified_accounts(): void
