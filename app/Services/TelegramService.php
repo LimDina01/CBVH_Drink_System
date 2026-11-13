@@ -130,6 +130,12 @@ class TelegramService
         $chatId = (string) $parsed['user']['id'];
         $username = $parsed['user']['username'] ?? null;
 
+        // Single-Device Lock: If user is ALREADY bound to a different Telegram account, refuse to overwrite!
+        if (!empty($user->telegram_chat_id) && (string) $user->telegram_chat_id !== $chatId) {
+            Log::warning("Blocked unauthorized Telegram re-bind for user {$user->id}. Existing: {$user->telegram_chat_id}, Attempted: {$chatId}");
+            return false;
+        }
+
         // Ensure one Telegram account is only linked to this active staff account
         User::where('telegram_chat_id', $chatId)
             ->where('id', '!=', $user->id)
@@ -164,6 +170,25 @@ class TelegramService
             'telegram_chat_id' => null,
             'telegram_username' => null,
         ]);
+    }
+
+    /**
+     * Send a security warning to the genuine user's Telegram device when an unauthorized login attempt is blocked.
+     */
+    public function notifyUnauthorizedBindAttempt(User $user, ?string $attemptedUsername = null): void
+    {
+        if (empty($user->telegram_chat_id)) {
+            return;
+        }
+
+        $empId = $user->employee_id ?: $user->name;
+        $usernameInfo = $attemptedUsername ? " (@{$attemptedUsername})" : '';
+        $message = "🚨 <b>CBVH Security Alert</b>\n\n"
+                 . "Someone attempted to sign in to your staff account (<b>{$empId}</b>) using another Telegram account{$usernameInfo}.\n\n"
+                 . "🔒 <b>Action Taken:</b> The sign-in was blocked because your account is securely locked to this device.\n\n"
+                 . "If this was not you, please notify HR or System Admin immediately to reset your password.";
+
+        $this->sendMessage($user->telegram_chat_id, $message);
     }
 
     /**

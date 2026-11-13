@@ -31,6 +31,7 @@ return [
     'signing_in' => 'Signing in...',
     'invalid_credentials' => 'Invalid Employee ID / Email or password.',
     'forgot_password_hint' => 'Forgot password? Contact HR or System Admin to reset.',
+    'device_locked_error' => 'This account is already bound to another Telegram device. If you switched phones, please ask HR or Admin to unlink your previous device.',
     'telegram_linked_msg' => 'Telegram account linked successfully!',
 
     // Mini App Tabs & Order Modes

@@ -51,6 +51,21 @@ new class extends Component
             return;
         }
 
+        // Single-Device Lock: If user is ALREADY bound to another Telegram account, reject unauthorized hijacking
+        if (!empty($this->telegramInitData) && !empty($user->telegram_chat_id)) {
+            $telegramService = app(TelegramService::class);
+            $parsed = $telegramService->validateInitData($this->telegramInitData);
+            $incomingChatId = isset($parsed['user']['id']) ? (string) $parsed['user']['id'] : null;
+
+            if ($incomingChatId && $incomingChatId !== (string) $user->telegram_chat_id) {
+                // Notify the genuine user on their original phone
+                $telegramService->notifyUnauthorizedBindAttempt($user, $parsed['user']['username'] ?? null);
+
+                $this->errorMessage = __('cbvh.device_locked_error');
+                return;
+            }
+        }
+
         Auth::login($user, remember: true);
 
         session()->regenerate();

@@ -1027,4 +1027,56 @@ class BookingSystemTest extends TestCase
 
         $this->assertAuthenticatedAs($employee->fresh());
     }
+
+    public function test_single_device_telegram_lock_blocks_hijacking_and_notifies_owner(): void
+    {
+        $botToken = config('services.telegram.bot_token') ?: 'test-token-123';
+        config(['services.telegram.bot_token' => $botToken]);
+
+        $hq = Branch::where('code', 'HQ')->first();
+        $employee = User::create([
+            'name' => 'Genuine Staff',
+            'employee_id' => 'A100888',
+            'email' => 'genuine@cbvh.internal',
+            'password' => bcrypt('correct-password'),
+            'role' => 'employee',
+            'branch_id' => $hq->id,
+            'telegram_chat_id' => '111111',
+            'telegram_username' => 'genuine_user',
+        ]);
+
+        // Generate attacker's signed initData with Telegram ID 999999
+        $attackerTgJson = json_encode(['id' => 999999, 'first_name' => 'Attacker', 'username' => 'attacker_bot']);
+        $fields = ['auth_date' => (string) time(), 'user' => $attackerTgJson];
+        ksort($fields);
+        $hash = hash_hmac('sha256', "auth_date={$fields['auth_date']}\nuser={$fields['user']}", hash_hmac('sha256', $botToken, 'WebAppData', true));
+        $attackerInitData = http_build_query($fields + ['hash' => $hash]);
+
+        // Attacker attempts login with genuine employee's ID and password from attacker's Telegram device
+        Livewire::test('auth.login-page')
+            ->set('telegramInitData', $attackerInitData)
+            ->set('loginId', 'A100888')
+            ->set('password', 'correct-password')
+            ->call('login')
+            ->assertSee(__('cbvh.device_locked_error'))
+            ->assertNoRedirect();
+
+        // Login is rejected and user remains a guest
+        $this->assertGuest();
+
+        // Database record remains intact and bound to genuine user's device
+        $this->assertDatabaseHas('users', [
+            'id' => $employee->id,
+            'telegram_chat_id' => '111111',
+            'telegram_username' => 'genuine_user',
+        ]);
+
+        // Security notification was dispatched to genuine user's Telegram chat ID
+        Http::assertSent(function (\Illuminate\Http\Client\Request $request) {
+            return str_contains($request->url(), '/sendMessage')
+                && (string) $request['chat_id'] === '111111'
+                && str_contains($request['text'], 'CBVH Security Alert')
+                && str_contains($request['text'], 'attacker_bot');
+        });
+    }
 }
