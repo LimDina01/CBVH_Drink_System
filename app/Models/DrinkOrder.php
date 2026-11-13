@@ -13,6 +13,19 @@ class DrinkOrder extends Model
     use HasFactory;
 
     public const QUICK_DAILY_CUP_LIMIT = 10;
+    public const ADMIN_QUICK_DAILY_CUP_LIMIT = 50;
+
+    /**
+     * Determine daily quick cup limit based on user role (Admin = 50, Staff = 10).
+     */
+    public static function quickDailyLimitForUser(?User $user): int
+    {
+        if ($user && $user->isAdmin()) {
+            return self::ADMIN_QUICK_DAILY_CUP_LIMIT;
+        }
+
+        return self::QUICK_DAILY_CUP_LIMIT;
+    }
 
     protected $fillable = [
         'user_id',

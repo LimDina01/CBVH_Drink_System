@@ -219,7 +219,7 @@ new class extends Component
         if ($this->orderType === 'instant' && !$this->extendingOrderId) {
             $usedToday = DrinkOrder::quickCupsUsedToday($this->currentUserId);
             $trayCups = (int) collect($this->drinkCart)->sum('quantity');
-            $limit = DrinkOrder::QUICK_DAILY_CUP_LIMIT;
+            $limit = DrinkOrder::quickDailyLimitForUser(Auth::user());
 
             if (($usedToday + $trayCups + $qty) > $limit) {
                 $remaining = max(0, $limit - $usedToday - $trayCups);
@@ -331,7 +331,7 @@ new class extends Component
             }
 
             $usedToday = DrinkOrder::quickCupsUsedToday($this->currentUserId);
-            $limit = DrinkOrder::QUICK_DAILY_CUP_LIMIT;
+            $limit = DrinkOrder::quickDailyLimitForUser(Auth::user());
             if (($usedToday + $totalCups) > $limit) {
                 $this->flashMessage = __('cbvh.quick_daily_limit_exceeded', [
                     'limit' => $limit,
@@ -463,7 +463,7 @@ new class extends Component
 
         $canUseQuick = $isHqUser;
         $quickUsedToday = DrinkOrder::quickCupsUsedToday($this->currentUserId);
-        $quickDailyLimit = DrinkOrder::QUICK_DAILY_CUP_LIMIT;
+        $quickDailyLimit = DrinkOrder::quickDailyLimitForUser($currentUser);
 
         $activeOrders = DrinkOrder::where('user_id', $this->currentUserId)
             ->whereIn('status', ['approved', 'preparing', 'in_delivery'])

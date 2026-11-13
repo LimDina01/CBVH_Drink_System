@@ -1115,4 +1115,45 @@ class BookingSystemTest extends TestCase
         $component->call('$refresh')
             ->assertDispatched('new-barista-order', orderType: 'meeting');
     }
+
+    public function test_quick_daily_cup_limit_is_10_for_staff_and_50_for_admin(): void
+    {
+        $admin = User::where('role', 'admin')->first();
+        $employee = User::where('role', 'employee')->first();
+        $hq = Branch::where('code', 'HQ')->first();
+        $drink = DrinkItem::where('branch_id', $hq->id)->first();
+
+        // 1. Check helper limits
+        $this->assertSame(10, DrinkOrder::quickDailyLimitForUser($employee));
+        $this->assertSame(50, DrinkOrder::quickDailyLimitForUser($admin));
+
+        // 2. Employee Mini App displays limit 10
+        Livewire::actingAs($employee)
+            ->test('mini-app.booking-app')
+            ->assertSet('orderType', 'instant')
+            ->assertViewHas('quickDailyLimit', 10);
+
+        // 3. Admin Mini App displays limit 50
+        Livewire::actingAs($admin)
+            ->test('mini-app.booking-app')
+            ->assertSet('orderType', 'instant')
+            ->assertViewHas('quickDailyLimit', 50);
+
+        // 4. Employee attempting to add 11 cups in quick order must be blocked
+        Livewire::actingAs($employee)
+            ->test('mini-app.booking-app')
+            ->call('selectDrink', $drink->id)
+            ->set('drinkQuantity', 11)
+            ->call('addToCart')
+            ->assertSet('flashType', 'error');
+
+        // 5. Admin can successfully add 15 cups in quick order
+        Livewire::actingAs($admin)
+            ->test('mini-app.booking-app')
+            ->call('selectDrink', $drink->id)
+            ->set('drinkQuantity', 15)
+            ->call('addToCart')
+            ->assertSet('flashType', 'success')
+            ->assertCount('drinkCart', 1);
+    }
 }
