@@ -232,6 +232,12 @@ class TelegramService
         $calculatedHash = hash_hmac('sha256', $dataCheckString, $secretKey);
 
         if (hash_equals($calculatedHash, $hash)) {
+            // Check auth_date not older than 24 hours (86400 seconds) to prevent replay attacks
+            if (isset($data['auth_date']) && (time() - (int)$data['auth_date']) > 86400) {
+                Log::warning("Telegram initData expired (auth_date older than 24h)");
+                return null;
+            }
+
             if (isset($data['user'])) {
                 $data['user'] = json_decode($data['user'], true);
             }

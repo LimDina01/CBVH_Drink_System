@@ -30,6 +30,7 @@ return [
     'sign_in' => 'Sign In',
     'signing_in' => 'Signing in...',
     'invalid_credentials' => 'Invalid Employee ID / Email or password.',
+    'forgot_password_hint' => 'Forgot password? Contact HR or System Admin to reset.',
     'telegram_linked_msg' => 'Telegram account linked successfully!',
 
     // Mini App Tabs & Order Modes
@@ -222,6 +223,12 @@ return [
     'not_linked' => 'Not Linked',
     'unlink' => 'Unlink',
     'test_ping' => 'Test Ping',
+    'reset_password' => 'Reset Password',
+    'reset_password_for' => 'Reset Password for :name',
+    'new_password' => 'New Password',
+    'reset_to_default' => 'Default: cbvh1234',
+    'save_password' => 'Save New Password',
+    'password_reset_success' => 'Password for :name has been successfully reset!',
     'working_hours_rule' => 'Working Hours Rule (8 AM – 5 PM)',
     'working_hours_desc' => 'Quick Drinks are restricted to 8:00 AM – 5:00 PM. Switch off temporarily for after-hours testing.',
     'enforced_hours' => 'Enforced (8 AM – 5 PM)',

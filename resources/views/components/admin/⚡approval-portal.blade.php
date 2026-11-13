@@ -38,6 +38,13 @@ new class extends Component
     public string $staffSearch = '';
     public int $staffPerPage = 10;
 
+    // --- Password Reset Modal ---
+    public ?int $resettingUserId = null;
+    public string $resettingUserName = '';
+    public string $resettingUserEmployeeId = '';
+    public string $newStaffResetPassword = 'cbvh1234';
+    public bool $showResetPasswordModal = false;
+
     // --- Settings ---
     public $enforceWorkingHours = true;
     public bool $showOptionsInTable = false;
@@ -120,6 +127,43 @@ new class extends Component
             $this->flashMessage = "Unlinked Telegram from {$user->name}.";
             $this->flashType = 'success';
         }
+    }
+
+    public function openResetPasswordModal(int $userId): void
+    {
+        $user = User::findOrFail($userId);
+        $this->resettingUserId = $user->id;
+        $this->resettingUserName = $user->name;
+        $this->resettingUserEmployeeId = $user->employee_id ?: 'No ID';
+        $this->newStaffResetPassword = 'cbvh1234';
+        $this->showResetPasswordModal = true;
+    }
+
+    public function closeResetPasswordModal(): void
+    {
+        $this->showResetPasswordModal = false;
+        $this->resettingUserId = null;
+    }
+
+    public function saveNewPassword(): void
+    {
+        $this->validate([
+            'newStaffResetPassword' => 'required|min:4',
+        ]);
+
+        if (!$this->resettingUserId) {
+            return;
+        }
+
+        $user = User::findOrFail($this->resettingUserId);
+        $user->update([
+            'password' => Hash::make($this->newStaffResetPassword),
+        ]);
+
+        $this->flashMessage = __('cbvh.password_reset_success', ['name' => $user->name]);
+        $this->flashType = 'success';
+        $this->showResetPasswordModal = false;
+        $this->resettingUserId = null;
     }
 
     public function toggleWorkingHoursRule()
@@ -901,6 +945,13 @@ new class extends Component
                                                 {{ __('cbvh.unlink') }}
                                             </button>
                                         @endif
+
+                                        <button wire:click="openResetPasswordModal({{ $u->id }})"
+                                                title="{{ __('cbvh.reset_password') }}"
+                                                class="px-2.5 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 font-bold text-[11px] transition cursor-pointer flex items-center space-x-1">
+                                            <span>🔑</span>
+                                            <span>{{ __('cbvh.reset_password') }}</span>
+                                        </button>
                                     </div>
                                 </div>
                             @empty
@@ -942,6 +993,58 @@ new class extends Component
         @endif
 
     </main>
+
+    <!-- Reset Password Modal -->
+    @if($showResetPasswordModal)
+        <div class="fixed inset-0 bg-[#2C211C]/60 backdrop-blur-xs z-50 flex items-center justify-center p-4"
+             wire:keydown.escape="closeResetPasswordModal">
+            <div class="bg-white dark:bg-[#241C19] w-full max-w-sm rounded-3xl p-6 border border-[#E8DDD6] dark:border-[#3D2F29] shadow-2xl space-y-4">
+                <div class="flex items-center space-x-3">
+                    <div class="w-10 h-10 rounded-2xl bg-amber-100 dark:bg-amber-950/50 text-amber-600 flex items-center justify-center text-xl shrink-0">
+                        🔑
+                    </div>
+                    <div>
+                        <h3 class="font-bold text-sm text-[#2C211C] dark:text-[#F5EDE7]">
+                            {{ __('cbvh.reset_password') }}
+                        </h3>
+                        <p class="text-xs text-[#7C6A60] dark:text-[#BBA79D]">
+                            {{ $resettingUserName }} ({{ $resettingUserEmployeeId }})
+                        </p>
+                    </div>
+                </div>
+
+                <form wire:submit="saveNewPassword" class="space-y-3 pt-2">
+                    <div>
+                        <label class="block text-xs font-semibold text-[#7C6A60] dark:text-[#BBA79D] mb-1">
+                            {{ __('cbvh.new_password') }}
+                        </label>
+                        <input type="text" wire:model="newStaffResetPassword" required minlength="4"
+                               class="w-full text-xs p-2.5 rounded-xl border border-[#E8DDD6] dark:border-[#3D2F29] bg-[#FAF6F3] dark:bg-[#1A1412] text-[#2C211C] dark:text-[#F5EDE7] font-mono focus:border-[#9E6B55] focus:outline-hidden" />
+                        @error('newStaffResetPassword') <span class="text-xs text-rose-500 mt-1 block">{{ $message }}</span> @enderror
+                    </div>
+
+                    <div class="flex items-center justify-between text-[11px] bg-[#FAF6F3] dark:bg-[#1E1715] p-2 rounded-xl border border-[#E8DDD6] dark:border-[#3D2F29]">
+                        <span class="text-[#7C6A60] dark:text-[#BBA79D]">Quick default:</span>
+                        <button type="button" wire:click="$set('newStaffResetPassword', 'cbvh1234')"
+                                class="font-mono font-bold text-amber-600 dark:text-amber-400 hover:underline cursor-pointer">
+                            {{ __('cbvh.reset_to_default') }}
+                        </button>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-2 pt-2">
+                        <button type="button" wire:click="closeResetPasswordModal"
+                                class="py-2.5 px-3 rounded-xl bg-[#FAF6F3] dark:bg-[#1A1412] border border-[#E8DDD6] dark:border-[#3D2F29] text-[#2C211C] dark:text-[#F5EDE7] font-bold text-xs cursor-pointer hover:bg-[#F5EDE7] transition">
+                            Cancel
+                        </button>
+                        <button type="submit"
+                                class="py-2.5 px-3 rounded-xl bg-[#9E6B55] hover:bg-[#835440] text-white font-bold text-xs shadow-xs cursor-pointer transition">
+                            {{ __('cbvh.save_password') }}
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    @endif
 
     <x-logout-confirm-modal mode="form" />
 </div>

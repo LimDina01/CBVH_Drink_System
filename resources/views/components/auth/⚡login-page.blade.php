@@ -129,6 +129,9 @@ new class extends Component
                 <input type="password" wire:model="password" required placeholder="••••••••"
                        class="w-full text-sm px-4 py-3 rounded-xl border border-[#E8DDD6] dark:border-[#3D2F29] bg-[#FAF6F3] dark:bg-[#1A1412] text-[#2C211C] dark:text-[#F5EDE7] focus:border-[#9E6B55] focus:outline-hidden" />
                 @error('password') <span class="text-[11px] text-rose-500 mt-1 block">{{ $message }}</span> @enderror
+                <p class="text-[11px] text-[#7C6A60] dark:text-[#BBA79D] mt-1.5 leading-tight">
+                    💡 {{ __('cbvh.forgot_password_hint') }}
+                </p>
             </div>
 
             <button type="submit" wire:loading.attr="disabled"

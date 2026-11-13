@@ -72,7 +72,7 @@ class BookingSystemTest extends TestCase
 
         $employee = User::where('email', 'branch.staff@company.com')->first();
         $tgUserJson = json_encode(['id' => 77889900, 'first_name' => 'Dara', 'username' => 'darasok']);
-        $fields = ['auth_date' => '1700000000', 'user' => $tgUserJson];
+        $fields = ['auth_date' => (string) time(), 'user' => $tgUserJson];
         ksort($fields);
         $hash = hash_hmac('sha256', "auth_date={$fields['auth_date']}\nuser={$fields['user']}", hash_hmac('sha256', $botToken, 'WebAppData', true));
         $initData = http_build_query($fields + ['hash' => $hash]);
@@ -987,5 +987,44 @@ class BookingSystemTest extends TestCase
 
         $this->assertAuthenticated();
         $this->assertSame('A100888', Auth::user()->employee_id);
+    }
+
+    public function test_admin_can_reset_staff_password_and_staff_can_login_with_new_password(): void
+    {
+        $admin = User::where('role', 'admin')->first();
+        $employee = User::where('email', 'employee@company.com')->first();
+
+        // 1. Admin opens reset password modal for employee and saves new password
+        Livewire::actingAs($admin)
+            ->test('admin.approval-portal')
+            ->set('activeSection', 'team')
+            ->call('openResetPasswordModal', $employee->id)
+            ->assertSet('showResetPasswordModal', true)
+            ->assertSet('resettingUserId', $employee->id)
+            ->set('newStaffResetPassword', 'NewSecret999!')
+            ->call('saveNewPassword')
+            ->assertSet('showResetPasswordModal', false)
+            ->assertSet('flashType', 'success');
+
+        // 2. Log out admin before testing employee login
+        Auth::logout();
+
+        // Old password ('password') should now fail
+        Livewire::test('auth.login-page')
+            ->set('loginId', $employee->employee_id ?: $employee->email)
+            ->set('password', 'password')
+            ->call('login')
+            ->assertSee(__('cbvh.invalid_credentials'));
+
+        $this->assertGuest();
+
+        // 3. New password ('NewSecret999!') should succeed
+        Livewire::test('auth.login-page')
+            ->set('loginId', $employee->employee_id ?: $employee->email)
+            ->set('password', 'NewSecret999!')
+            ->call('login')
+            ->assertRedirect('/');
+
+        $this->assertAuthenticatedAs($employee->fresh());
     }
 }
