@@ -6,7 +6,12 @@ echo "🚀 Deploying CBVH Drink System (Production)..."
 # 1. Pull latest changes
 git pull origin main
 
-# 2. Install PHP production dependencies (skips dev tools)
+# 2. Ensure deploy user & web server have write access
+sudo chown -R $USER:www-data storage bootstrap/cache database 2>/dev/null || true
+sudo chmod -R 777 storage bootstrap/cache 2>/dev/null || true
+sudo chmod -R 775 database 2>/dev/null || true
+
+# 3. Install PHP production dependencies (skips dev tools)
 composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader
 
 # 3. Build optimized frontend assets
@@ -28,8 +33,9 @@ php artisan route:cache
 php artisan view:cache
 
 # 7. Set strict production permissions
-sudo chown -R www-data:www-data storage bootstrap/cache database
-sudo chmod -R 775 storage bootstrap/cache database
+sudo chown -R $USER:www-data storage bootstrap/cache database
+sudo chmod -R 777 storage bootstrap/cache
+sudo chmod -R 775 database
 
 # 8. Reload PHP-FPM
 sudo systemctl reload php8.5-fpm || sudo systemctl reload php8.4-fpm || sudo systemctl reload php8.3-fpm || sudo systemctl reload php-fpm || true
