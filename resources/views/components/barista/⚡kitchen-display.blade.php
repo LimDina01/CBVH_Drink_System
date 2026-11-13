@@ -10,11 +10,11 @@ new class extends Component
 {
     public $viewFilter = 'all'; // 'all', 'instant', 'meeting'
     public $flashMessage = null;
-    public $lastNewOrderCount = 0;
+    public int $lastKnownOrderId = 0;
 
     public function mount()
     {
-        $this->lastNewOrderCount = DrinkOrder::where('status', 'approved')->count();
+        $this->lastKnownOrderId = (int) (DrinkOrder::max('id') ?? 0);
     }
 
     public function acceptOrder($orderId)
@@ -75,11 +75,15 @@ new class extends Component
         $instantOrders = $orders->whereIn('order_type', ['instant', 'extend']);
         $meetingOrders = $orders->where('order_type', 'meeting');
 
-        $newCount = $orders->where('status', 'approved')->count();
-        if ($newCount > $this->lastNewOrderCount) {
-            $this->dispatch('new-barista-order');
+        $approvedOrders = $orders->where('status', 'approved');
+        $newCount = $approvedOrders->count();
+        $latestApproved = $approvedOrders->sortByDesc('id')->first();
+
+        if ($latestApproved && $latestApproved->id > $this->lastKnownOrderId) {
+            $this->lastKnownOrderId = (int) $latestApproved->id;
+            $orderType = ($latestApproved->order_type === 'meeting') ? 'meeting' : 'quick';
+            $this->dispatch('new-barista-order', orderType: $orderType);
         }
-        $this->lastNewOrderCount = $newCount;
 
         $completedToday = DrinkOrder::where('status', 'completed')
             ->whereDate('completed_at', today())
@@ -135,8 +139,7 @@ new class extends Component
                 }
             } catch (e) {}
         },
-        playChime() {
-            if (!this.soundOn) return;
+        playDingDong() {
             try {
                 this.unlockAudio();
                 const ctx = this.audioCtx;
@@ -146,20 +149,35 @@ new class extends Component
                     const osc = ctx.createOscillator();
                     const gain = ctx.createGain();
                     osc.type = 'sine';
-                    osc.frequency.setValueAtTime(freq, now + idx * 0.14);
-                    gain.gain.setValueAtTime(0.18, now + idx * 0.14);
-                    gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.14 + 0.4);
+                    osc.frequency.setValueAtTime(freq, now + idx * 0.16);
+                    gain.gain.setValueAtTime(0.24, now + idx * 0.16);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.16 + 0.45);
                     osc.connect(gain);
                     gain.connect(ctx.destination);
-                    osc.start(now + idx * 0.14);
-                    osc.stop(now + idx * 0.14 + 0.4);
+                    osc.start(now + idx * 0.16);
+                    osc.stop(now + idx * 0.16 + 0.45);
                 });
             } catch (e) {}
+        },
+        playOrderAlert(type = 'quick') {
+            if (!this.soundOn) return;
+            this.unlockAudio();
+            this.playDingDong();
+
+            setTimeout(() => {
+                try {
+                    const voiceSrc = (type === 'meeting') 
+                        ? '{{ asset('sounds/voice-meeting.mp3') }}' 
+                        : '{{ asset('sounds/voice-quick.mp3') }}';
+                    const voice = new Audio(voiceSrc);
+                    voice.play().catch(() => {});
+                } catch (e) {}
+            }, 600);
         }
      }"
      @click.window="unlockAudio()"
      @touchstart.window="unlockAudio()"
-     @new-barista-order.window="playChime()"
+     @new-barista-order.window="playOrderAlert($event.detail?.orderType || 'quick')"
      class="min-h-screen bg-[#FAF6F3] dark:bg-[#1A1412] text-[#2C211C] dark:text-[#F5EDE7] flex flex-col touch-manipulation select-none">
 
     <!-- Header -->
@@ -173,13 +191,27 @@ new class extends Component
         </div>
 
         <div class="flex flex-wrap items-center gap-2 relative">
-            <!-- Sound Toggle -->
-            <button type="button" @click="soundOn = !soundOn; if(soundOn) playChime()"
-                    class="px-3.5 py-2 rounded-xl text-sm font-bold border transition cursor-pointer"
-                    :class="soundOn ? 'bg-emerald-50 border-emerald-300 text-emerald-800' : 'bg-slate-100 border-slate-300 text-slate-600'">
-                <span x-show="soundOn">🔊 {{ __('cbvh.sound_on') }}</span>
-                <span x-show="!soundOn" x-cloak>🔇 {{ __('cbvh.muted') }}</span>
-            </button>
+            <!-- Sound Toggle & Voice Test Buttons -->
+            <div class="flex items-center space-x-1.5">
+                <button type="button" @click="soundOn = !soundOn; if(soundOn) playOrderAlert('quick')"
+                        class="px-3.5 py-2 rounded-xl text-sm font-bold border transition cursor-pointer flex items-center space-x-1.5"
+                        :class="soundOn ? 'bg-emerald-50 border-emerald-300 text-emerald-800' : 'bg-slate-100 border-slate-300 text-slate-600'"
+                        title="{{ __('cbvh.sound_on') }}">
+                    <span x-show="soundOn">🔊 {{ __('cbvh.sound_on') }}</span>
+                    <span x-show="!soundOn" x-cloak>🔇 {{ __('cbvh.muted') }}</span>
+                </button>
+
+                <button type="button" @click="playOrderAlert('quick')"
+                        class="px-2.5 py-2 rounded-xl text-xs font-bold bg-[#FAF6F3] dark:bg-[#3A2C26] border border-[#E8DDD6] dark:border-[#523F36] text-[#835440] dark:text-[#E8CFC1] hover:bg-[#F5EDE7] cursor-pointer"
+                        title="{{ __('cbvh.test_quick_alert') }}">
+                    ⚡ {{ __('cbvh.filter_quick') }}
+                </button>
+                <button type="button" @click="playOrderAlert('meeting')"
+                        class="px-2.5 py-2 rounded-xl text-xs font-bold bg-[#FAF6F3] dark:bg-[#3A2C26] border border-[#E8DDD6] dark:border-[#523F36] text-[#835440] dark:text-[#E8CFC1] hover:bg-[#F5EDE7] cursor-pointer"
+                        title="{{ __('cbvh.test_meeting_alert') }}">
+                    🗓️ {{ __('cbvh.filter_meeting') }}
+                </button>
+            </div>
 
             <div class="text-sm bg-[#F5EDE7] dark:bg-[#3A2C26] text-[#835440] dark:text-[#E8CFC1] px-3.5 py-2 rounded-xl font-bold border border-[#E8DDD6]">
                 {{ __('cbvh.done_today', ['count' => $completedToday]) }}

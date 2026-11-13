@@ -50,12 +50,14 @@ new class extends Component
     public bool $showOptionsInTable = false;
     public $flashMessage = null;
     public $flashType = 'success';
+    public int $lastKnownOrderId = 0;
 
     public function mount()
     {
         $this->setPeriod('this_month');
         $this->enforceWorkingHours = (bool) Cache::get('enforce_working_hours', true);
         $this->newBranchId = Branch::first()?->id;
+        $this->lastKnownOrderId = (int) (DrinkOrder::max('id') ?? 0);
     }
 
     public function setPeriod(string $period): void
@@ -427,6 +429,13 @@ new class extends Component
     {
         DrinkOrder::autoCompleteExpiredDeliveries();
 
+        $latestApproved = DrinkOrder::where('status', 'approved')->orderByDesc('id')->first();
+        if ($latestApproved && $latestApproved->id > $this->lastKnownOrderId) {
+            $this->lastKnownOrderId = (int) $latestApproved->id;
+            $orderType = ($latestApproved->order_type === 'meeting') ? 'meeting' : 'quick';
+            $this->dispatch('new-admin-order', orderType: $orderType);
+        }
+
         $allFilteredOrders = $this->buildFilteredOrdersQuery()->get();
         $paginatedOrders = $this->buildFilteredOrdersQuery()->paginate($this->perPage);
         $totalCups = $allFilteredOrders->sum(fn($o) => $o->items->sum('quantity'));
@@ -481,7 +490,62 @@ new class extends Component
 };
 ?>
 
-<div wire:poll.8s x-data="{ confirmLogout: false }" class="min-h-screen bg-[#FAF6F3]/80 dark:bg-[#1A1412]/90 text-[#2C211C] dark:text-[#F5EDE7] flex flex-col">
+<div wire:poll.8s
+     x-data="{
+        confirmLogout: false,
+        soundOn: false,
+        audioCtx: null,
+        unlockAudio() {
+            try {
+                if (!this.audioCtx) {
+                    const Ctx = window.AudioContext || window.webkitAudioContext;
+                    if (Ctx) this.audioCtx = new Ctx();
+                }
+                if (this.audioCtx && this.audioCtx.state === 'suspended') {
+                    this.audioCtx.resume().catch(() => {});
+                }
+            } catch (e) {}
+        },
+        playDingDong() {
+            try {
+                this.unlockAudio();
+                const ctx = this.audioCtx;
+                if (!ctx) return;
+                const now = ctx.currentTime;
+                [587.33, 880].forEach((freq, idx) => {
+                    const osc = ctx.createOscillator();
+                    const gain = ctx.createGain();
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(freq, now + idx * 0.16);
+                    gain.gain.setValueAtTime(0.24, now + idx * 0.16);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.16 + 0.45);
+                    osc.connect(gain);
+                    gain.connect(ctx.destination);
+                    osc.start(now + idx * 0.16);
+                    osc.stop(now + idx * 0.16 + 0.45);
+                });
+            } catch (e) {}
+        },
+        playOrderAlert(type = 'quick') {
+            if (!this.soundOn) return;
+            this.unlockAudio();
+            this.playDingDong();
+
+            setTimeout(() => {
+                try {
+                    const voiceSrc = (type === 'meeting') 
+                        ? '{{ asset('sounds/voice-meeting.mp3') }}' 
+                        : '{{ asset('sounds/voice-quick.mp3') }}';
+                    const voice = new Audio(voiceSrc);
+                    voice.play().catch(() => {});
+                } catch (e) {}
+            }, 600);
+        }
+     }"
+     @click.window="unlockAudio()"
+     @touchstart.window="unlockAudio()"
+     @new-admin-order.window="playOrderAlert($event.detail?.orderType || 'quick')"
+     class="min-h-screen bg-[#FAF6F3]/80 dark:bg-[#1A1412]/90 text-[#2C211C] dark:text-[#F5EDE7] flex flex-col">
     <!-- Header -->
     <header class="bg-white/95 dark:bg-[#241C19]/95 backdrop-blur-md border-b border-[#E8DDD6] dark:border-[#3D2F29] px-6 py-3.5 flex flex-wrap items-center justify-between gap-4 sticky top-0 z-10 shadow-[0_2px_16px_rgba(158,107,85,0.06)]">
         <div class="flex items-center space-x-3.5">
@@ -495,6 +559,14 @@ new class extends Component
         </div>
 
         <div class="flex flex-wrap items-center gap-2">
+            <!-- Sound Alert Toggle for Admin -->
+            <button type="button" @click="soundOn = !soundOn; if(soundOn) playOrderAlert('quick')"
+                    class="px-3 py-2 rounded-xl text-xs font-bold border transition cursor-pointer flex items-center space-x-1"
+                    :class="soundOn ? 'bg-emerald-50 border-emerald-300 text-emerald-800' : 'bg-[#FAF6F3] border-[#E8DDD6] text-[#7C6A60]'"
+                    title="{{ __('cbvh.sound_on') }}">
+                <span x-show="soundOn">🔊 {{ __('cbvh.sound_on') }}</span>
+                <span x-show="!soundOn" x-cloak>🔇 {{ __('cbvh.muted') }}</span>
+            </button>
             <button wire:click="$set('activeSection', 'reports')"
                     class="px-3.5 py-2 rounded-xl text-xs font-bold transition cursor-pointer {{ $activeSection === 'reports' ? 'bg-[#9E6B55] text-white' : 'bg-[#F5EDE7] text-[#835440] border border-[#E8DDD6]' }}">
                 📊 {{ __('cbvh.tab_tracking_reports') }}

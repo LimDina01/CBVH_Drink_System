@@ -1079,4 +1079,40 @@ class BookingSystemTest extends TestCase
                 && str_contains($request['text'], 'attacker_bot');
         });
     }
+
+    public function test_kitchen_display_dispatches_distinct_audio_alert_events_for_quick_and_meeting_orders(): void
+    {
+        $barista = User::where('role', 'barista')->first();
+        $employee = User::where('role', 'employee')->first();
+        $hq = Branch::where('code', 'HQ')->first();
+        $room = $hq->rooms()->first();
+
+        // 1. Mount kitchen display
+        $component = Livewire::actingAs($barista)->test('barista.kitchen-display');
+
+        // 2. Create a new Quick Order
+        $quickOrder = DrinkOrder::create([
+            'user_id' => $employee->id,
+            'branch_id' => $hq->id,
+            'room_id' => $room->id,
+            'order_type' => 'instant',
+            'status' => 'approved',
+        ]);
+
+        $component->call('$refresh')
+            ->assertDispatched('new-barista-order', orderType: 'quick');
+
+        // 3. Create a new Meeting Order
+        $meetingOrder = DrinkOrder::create([
+            'user_id' => $employee->id,
+            'branch_id' => $hq->id,
+            'room_id' => $room->id,
+            'order_type' => 'meeting',
+            'status' => 'approved',
+            'delivery_time' => now()->addHours(2),
+        ]);
+
+        $component->call('$refresh')
+            ->assertDispatched('new-barista-order', orderType: 'meeting');
+    }
 }
