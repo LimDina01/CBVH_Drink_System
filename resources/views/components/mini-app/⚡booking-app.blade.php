@@ -421,7 +421,7 @@ new class extends Component
             'extend_reason' => $isExtend ? $this->extendReason : null,
             'delivery_time' => $deliveryTime,
             'estimated_wait_minutes' => $waitMinutes,
-            'people_count' => in_array($finalOrderType, ['instant', 'extend'], true) ? $totalCups : max(1, (int) $this->peopleCount),
+            'people_count' => $totalCups,
             'notes' => $this->drinkNotes,
             'attachment_path' => $attachmentPath,
             'attachment_name' => $attachmentName,
@@ -771,13 +771,7 @@ new class extends Component
                             </div>
                         @endif
 
-                        @if($orderType === 'meeting' && !$extendingOrderId)
-                            <div>
-                                <label class="block text-[11px] font-medium text-[#7C6A60] dark:text-[#BBA79D] mb-1">{{ __('cbvh.people_count') }}</label>
-                                <input type="number" min="1" max="100" wire:model="peopleCount"
-                                       class="w-full text-xs bg-[#FAF6F3] dark:bg-[#1A1412] border border-[#E8DDD6] dark:border-[#3D2F29] text-[#2C211C] dark:text-[#F5EDE7] rounded-xl px-3.5 py-2.5 font-semibold focus:border-[#9E6B55] focus:outline-hidden" />
-                            </div>
-                        @elseif($orderType === 'instant' && !$extendingOrderId)
+                        @if(!$extendingOrderId)
                             <div class="text-[11px] text-[#7C6A60] dark:text-[#BBA79D] px-0.5">
                                 👥 {{ __('cbvh.quick_auto_guests') }}
                             </div>

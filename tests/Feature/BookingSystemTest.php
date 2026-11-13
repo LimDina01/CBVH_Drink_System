@@ -252,9 +252,9 @@ class BookingSystemTest extends TestCase
             ->call('setOrderType', 'meeting')
             ->set('meetingDate', '2026-11-14')
             ->set('meetingClock', '12:30')
-            ->set('peopleCount', 8)
             ->set('attachment', $file)
             ->call('selectDrink', $drink->id)
+            ->set('drinkQuantity', 8)
             ->call('addToCart')
             ->call('submitDrinkOrder')
             ->assertSet('flashType', 'success');
@@ -1193,5 +1193,34 @@ class BookingSystemTest extends TestCase
                 && str_contains($button['text'], 'Open Mini App')
                 && !empty($button['web_app']['url']);
         });
+    }
+
+    public function test_meeting_drink_automatically_sets_people_count_equal_to_total_cups_without_people_input(): void
+    {
+        Carbon::setTestNow(Carbon::create(2026, 11, 12, 10, 0, 0));
+
+        $employee = User::where('role', 'employee')->first();
+        $hq = Branch::where('code', 'HQ')->first();
+        $drink = DrinkItem::where('branch_id', $hq->id)->first();
+
+        $file = UploadedFile::fake()->create('agenda.pdf', 100, 'application/pdf');
+
+        Livewire::actingAs($employee)
+            ->test('mini-app.booking-app')
+            ->call('setOrderType', 'meeting')
+            ->assertDontSeeHtml('wire:model="peopleCount"')
+            ->set('meetingDate', '2026-11-14')
+            ->set('meetingClock', '14:00')
+            ->set('attachment', $file)
+            ->call('selectDrink', $drink->id)
+            ->set('drinkQuantity', 5)
+            ->call('addToCart')
+            ->call('submitDrinkOrder')
+            ->assertSet('flashType', 'success');
+
+        $this->assertDatabaseHas('drink_orders', [
+            'order_type' => 'meeting',
+            'people_count' => 5,
+        ]);
     }
 }
