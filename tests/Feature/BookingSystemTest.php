@@ -473,6 +473,20 @@ class BookingSystemTest extends TestCase
             ->test('admin.approval-portal')
             ->call('exportDrinkTotalsCsv')
             ->assertFileDownloaded();
+
+        Livewire::actingAs($admin)
+            ->test('admin.approval-portal')
+            ->call('setPeriod', 'today')
+            ->assertSet('filterPeriod', 'today')
+            ->assertSet('dateFrom', today()->toDateString())
+            ->assertSet('dateTo', today()->toDateString())
+            ->call('setPeriod', 'this_month')
+            ->assertSet('filterPeriod', 'this_month')
+            ->assertSet('dateFrom', now()->startOfMonth()->toDateString())
+            ->set('filterUserId', $admin->id)
+            ->assertSeeText('#' . $order->id)
+            ->set('searchQuery', 'NonExistentXYZ999')
+            ->assertDontSeeText('#' . $order->id);
     }
 
     public function test_telegram_webhook_does_not_auto_create_unverified_accounts(): void

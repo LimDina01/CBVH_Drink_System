@@ -15,8 +15,11 @@ new class extends Component
 
     // --- Report Filters ---
     public $filterBranchId = 'all';
+    public $filterUserId = 'all';
     public $filterType = 'all'; // 'all', 'instant', 'meeting', 'extend'
     public $filterStatus = 'all';
+    public $filterPeriod = 'this_month'; // 'today', 'this_month', 'last_month', 'all', 'custom'
+    public $searchQuery = '';
     public $dateFrom;
     public $dateTo;
 
@@ -35,10 +38,37 @@ new class extends Component
 
     public function mount()
     {
-        $this->dateFrom = now()->subDays(7)->format('Y-m-d');
-        $this->dateTo = now()->addDays(14)->format('Y-m-d');
+        $this->setPeriod('this_month');
         $this->enforceWorkingHours = (bool) Cache::get('enforce_working_hours', true);
         $this->newBranchId = Branch::first()?->id;
+    }
+
+    public function setPeriod(string $period): void
+    {
+        $this->filterPeriod = $period;
+        if ($period === 'today') {
+            $this->dateFrom = today()->toDateString();
+            $this->dateTo = today()->toDateString();
+        } elseif ($period === 'this_month') {
+            $this->dateFrom = now()->startOfMonth()->toDateString();
+            $this->dateTo = now()->endOfMonth()->toDateString();
+        } elseif ($period === 'last_month') {
+            $this->dateFrom = now()->subMonthNoOverflow()->startOfMonth()->toDateString();
+            $this->dateTo = now()->subMonthNoOverflow()->endOfMonth()->toDateString();
+        } elseif ($period === 'all') {
+            $this->dateFrom = null;
+            $this->dateTo = null;
+        }
+    }
+
+    public function updatedDateFrom(): void
+    {
+        $this->filterPeriod = 'custom';
+    }
+
+    public function updatedDateTo(): void
+    {
+        $this->filterPeriod = 'custom';
     }
 
     public function createStaffAccount(): void
@@ -181,6 +211,10 @@ new class extends Component
             $query->where('branch_id', $this->filterBranchId);
         }
 
+        if ($this->filterUserId !== 'all') {
+            $query->where('user_id', $this->filterUserId);
+        }
+
         if ($this->filterType !== 'all') {
             $query->where('order_type', $this->filterType);
         }
@@ -195,6 +229,17 @@ new class extends Component
 
         if ($this->dateTo) {
             $query->whereDate('created_at', '<=', $this->dateTo);
+        }
+
+        if (!empty(trim($this->searchQuery))) {
+            $s = trim($this->searchQuery);
+            $query->where(function ($q) use ($s) {
+                $q->where('id', 'like', "%{$s}%")
+                    ->orWhere('notes', 'like', "%{$s}%")
+                    ->orWhereHas('user', fn($uq) => $uq->where('name', 'like', "%{$s}%"))
+                    ->orWhereHas('room', fn($rq) => $rq->where('name', 'like', "%{$s}%"))
+                    ->orWhereHas('items.drinkItem', fn($dq) => $dq->where('name', 'like', "%{$s}%"));
+            });
         }
 
         return $query;
@@ -453,38 +498,91 @@ new class extends Component
                 </div>
             </div>
 
-            <!-- Filter Bar + Export CSV -->
-            <div class="bg-white dark:bg-[#241C19] p-4 rounded-2xl border border-[#E8DDD6] dark:border-[#3D2F29] shadow-2xs flex flex-wrap items-end justify-between gap-3">
-                <div class="grid grid-cols-2 sm:grid-cols-5 gap-3 flex-1">
-                    <div>
-                        <label class="block text-[10px] font-bold uppercase text-[#7C6A60] mb-1">{{ __('cbvh.from_date') }}</label>
-                        <input type="date" wire:model.live="dateFrom" class="w-full text-xs p-2 rounded-xl border border-[#E8DDD6] bg-[#FAF6F3] font-semibold" />
+            <!-- Filter Bar + Export Actions -->
+            <div class="bg-white dark:bg-[#241C19] p-4 rounded-2xl border border-[#E8DDD6] dark:border-[#3D2F29] shadow-2xs space-y-3.5">
+                <!-- Row 1: Time Presets + Export Action Buttons -->
+                <div class="flex flex-wrap items-center justify-between gap-3">
+                    <!-- Period Presets -->
+                    <div class="flex flex-wrap items-center gap-1.5">
+                        <button type="button" wire:click="setPeriod('today')"
+                                class="px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer {{ $filterPeriod === 'today' ? 'bg-[#9E6B55] text-white shadow-xs' : 'bg-[#FAF6F3] dark:bg-[#2A201C] text-[#7C6A60] dark:text-[#BBA79D] border border-[#E8DDD6] dark:border-[#3D2F29] hover:bg-[#F5EDE7]' }}">
+                            📅 {{ __('cbvh.preset_today') }}
+                        </button>
+                        <button type="button" wire:click="setPeriod('this_month')"
+                                class="px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer {{ $filterPeriod === 'this_month' ? 'bg-[#9E6B55] text-white shadow-xs' : 'bg-[#FAF6F3] dark:bg-[#2A201C] text-[#7C6A60] dark:text-[#BBA79D] border border-[#E8DDD6] dark:border-[#3D2F29] hover:bg-[#F5EDE7]' }}">
+                            🗓️ {{ __('cbvh.preset_this_month') }} ({{ now()->format('M Y') }})
+                        </button>
+                        <button type="button" wire:click="setPeriod('last_month')"
+                                class="px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer {{ $filterPeriod === 'last_month' ? 'bg-[#9E6B55] text-white shadow-xs' : 'bg-[#FAF6F3] dark:bg-[#2A201C] text-[#7C6A60] dark:text-[#BBA79D] border border-[#E8DDD6] dark:border-[#3D2F29] hover:bg-[#F5EDE7]' }}">
+                            ⏪ {{ __('cbvh.preset_last_month') }} ({{ now()->subMonthNoOverflow()->format('M Y') }})
+                        </button>
+                        <button type="button" wire:click="setPeriod('all')"
+                                class="px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer {{ $filterPeriod === 'all' ? 'bg-[#9E6B55] text-white shadow-xs' : 'bg-[#FAF6F3] dark:bg-[#2A201C] text-[#7C6A60] dark:text-[#BBA79D] border border-[#E8DDD6] dark:border-[#3D2F29] hover:bg-[#F5EDE7]' }}">
+                            🌐 {{ __('cbvh.preset_all_time') }}
+                        </button>
                     </div>
-                    <div>
-                        <label class="block text-[10px] font-bold uppercase text-[#7C6A60] mb-1">{{ __('cbvh.to_date') }}</label>
-                        <input type="date" wire:model.live="dateTo" class="w-full text-xs p-2 rounded-xl border border-[#E8DDD6] bg-[#FAF6F3] font-semibold" />
+
+                    <!-- Export Buttons -->
+                    <div class="flex items-center space-x-2 shrink-0">
+                        <button wire:click="exportCsv"
+                                class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs flex items-center space-x-1.5 transition cursor-pointer">
+                            <span>📥</span>
+                            <span>{{ __('cbvh.export_csv') }}</span>
+                        </button>
+                        <button wire:click="exportDrinkTotalsCsv"
+                                class="px-4 py-2 bg-[#9E6B55] hover:bg-[#835440] text-white font-bold text-xs rounded-xl shadow-xs flex items-center space-x-1.5 transition cursor-pointer">
+                            <span>📊</span>
+                            <span>{{ __('cbvh.export_drink_totals') }}</span>
+                        </button>
                     </div>
+                </div>
+
+                <!-- Row 2: Comprehensive Multi-Filter (Search + Branch + Staff + Type + Status + Custom Dates) -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2.5 pt-2 border-t border-[#FAF6F3] dark:border-[#3D2F29]">
+                    <!-- Live Search -->
                     <div>
-                        <label class="block text-[10px] font-bold uppercase text-[#7C6A60] mb-1">{{ __('cbvh.branch') }}</label>
-                        <select wire:model.live="filterBranchId" class="w-full text-xs p-2 rounded-xl border border-[#E8DDD6] bg-[#FAF6F3] font-semibold">
+                        <label class="block text-[10px] font-bold uppercase text-[#7C6A60] mb-1">🔍 {{ __('cbvh.search_orders_placeholder') }}</label>
+                        <input type="text" wire:model.live.debounce.250ms="searchQuery" placeholder="{{ __('cbvh.search_orders_placeholder') }}"
+                               class="w-full text-xs p-2 rounded-xl border border-[#E8DDD6] dark:border-[#3D2F29] bg-[#FAF6F3] dark:bg-[#1E1715] font-semibold text-[#2C211C] dark:text-[#F5EDE7]" />
+                    </div>
+
+                    <!-- Branch Filter -->
+                    <div>
+                        <label class="block text-[10px] font-bold uppercase text-[#7C6A60] mb-1">🏢 {{ __('cbvh.branch') }}</label>
+                        <select wire:model.live="filterBranchId" class="w-full text-xs p-2 rounded-xl border border-[#E8DDD6] dark:border-[#3D2F29] bg-[#FAF6F3] dark:bg-[#1E1715] font-semibold text-[#2C211C] dark:text-[#F5EDE7]">
                             <option value="all">{{ __('cbvh.all_branches') }}</option>
                             @foreach($branches as $b)
                                 <option value="{{ $b->id }}">{{ \App\Support\CbvhLocale::branch($b->name) }}</option>
                             @endforeach
                         </select>
                     </div>
+
+                    <!-- Staff / Requester Filter -->
                     <div>
-                        <label class="block text-[10px] font-bold uppercase text-[#7C6A60] mb-1">{{ __('cbvh.order_type') }}</label>
-                        <select wire:model.live="filterType" class="w-full text-xs p-2 rounded-xl border border-[#E8DDD6] bg-[#FAF6F3] font-semibold">
+                        <label class="block text-[10px] font-bold uppercase text-[#7C6A60] mb-1">👤 {{ __('cbvh.col_requester') }}</label>
+                        <select wire:model.live="filterUserId" class="w-full text-xs p-2 rounded-xl border border-[#E8DDD6] dark:border-[#3D2F29] bg-[#FAF6F3] dark:bg-[#1E1715] font-semibold text-[#2C211C] dark:text-[#F5EDE7]">
+                            <option value="all">{{ __('cbvh.all_staff') }}</option>
+                            @foreach($users as $u)
+                                <option value="{{ $u->id }}">{{ $u->name }} ({{ $u->branch?->code }})</option>
+                            @endforeach
+                        </select>
+                    </div>
+
+                    <!-- Order Type Filter -->
+                    <div>
+                        <label class="block text-[10px] font-bold uppercase text-[#7C6A60] mb-1">📋 {{ __('cbvh.order_type') }}</label>
+                        <select wire:model.live="filterType" class="w-full text-xs p-2 rounded-xl border border-[#E8DDD6] dark:border-[#3D2F29] bg-[#FAF6F3] dark:bg-[#1E1715] font-semibold text-[#2C211C] dark:text-[#F5EDE7]">
                             <option value="all">{{ __('cbvh.all_types') }}</option>
                             <option value="instant">⚡ {{ __('cbvh.quick_drink') }}</option>
                             <option value="meeting">📅 {{ __('cbvh.meeting_drink') }}</option>
                             <option value="extend">🔄 {{ __('cbvh.reason_spilled') }}</option>
                         </select>
                     </div>
+
+                    <!-- Status Filter -->
                     <div>
-                        <label class="block text-[10px] font-bold uppercase text-[#7C6A60] mb-1">{{ __('cbvh.status') }}</label>
-                        <select wire:model.live="filterStatus" class="w-full text-xs p-2 rounded-xl border border-[#E8DDD6] bg-[#FAF6F3] font-semibold">
+                        <label class="block text-[10px] font-bold uppercase text-[#7C6A60] mb-1">🏷️ {{ __('cbvh.status') }}</label>
+                        <select wire:model.live="filterStatus" class="w-full text-xs p-2 rounded-xl border border-[#E8DDD6] dark:border-[#3D2F29] bg-[#FAF6F3] dark:bg-[#1E1715] font-semibold text-[#2C211C] dark:text-[#F5EDE7]">
                             <option value="all">{{ __('cbvh.all_statuses') }}</option>
                             <option value="approved">{{ __('cbvh.status_approved') }}</option>
                             <option value="preparing">{{ __('cbvh.status_preparing') }}</option>
@@ -493,19 +591,18 @@ new class extends Component
                             <option value="rejected_by_barista">{{ __('cbvh.status_rejected') }}</option>
                         </select>
                     </div>
-                </div>
 
-                <div class="flex items-center space-x-2 shrink-0">
-                    <button wire:click="exportCsv"
-                            class="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs flex items-center space-x-1.5 transition cursor-pointer">
-                        <span>📥</span>
-                        <span>{{ __('cbvh.export_csv') }}</span>
-                    </button>
-                    <button wire:click="exportDrinkTotalsCsv"
-                            class="px-4 py-2.5 bg-[#9E6B55] hover:bg-[#835440] text-white font-bold text-xs rounded-xl shadow-xs flex items-center space-x-1.5 transition cursor-pointer">
-                        <span>📊</span>
-                        <span>{{ __('cbvh.export_drink_totals') }}</span>
-                    </button>
+                    <!-- Custom Date From/To -->
+                    <div class="flex items-center space-x-1.5">
+                        <div class="flex-1 min-w-0">
+                            <label class="block text-[10px] font-bold uppercase text-[#7C6A60] mb-1 truncate">{{ __('cbvh.from_date') }}</label>
+                            <input type="date" wire:model.live="dateFrom" class="w-full text-[11px] p-2 rounded-xl border border-[#E8DDD6] dark:border-[#3D2F29] bg-[#FAF6F3] dark:bg-[#1E1715] font-semibold text-[#2C211C] dark:text-[#F5EDE7]" />
+                        </div>
+                        <div class="flex-1 min-w-0">
+                            <label class="block text-[10px] font-bold uppercase text-[#7C6A60] mb-1 truncate">{{ __('cbvh.to_date') }}</label>
+                            <input type="date" wire:model.live="dateTo" class="w-full text-[11px] p-2 rounded-xl border border-[#E8DDD6] dark:border-[#3D2F29] bg-[#FAF6F3] dark:bg-[#1E1715] font-semibold text-[#2C211C] dark:text-[#F5EDE7]" />
+                        </div>
+                    </div>
                 </div>
             </div>
 
