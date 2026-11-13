@@ -34,6 +34,10 @@ new class extends Component
     public string $newRole = 'employee';
     public $newBranchId = null;
 
+    // --- Staff Directory Filters & Pagination ---
+    public string $staffSearch = '';
+    public int $staffPerPage = 10;
+
     // --- Settings ---
     public $enforceWorkingHours = true;
     public bool $showOptionsInTable = false;
@@ -73,6 +77,9 @@ new class extends Component
         }
         if (in_array($propertyName, ['filterBranchId', 'filterUserId', 'filterType', 'filterStatus', 'dateFrom', 'dateTo', 'searchQuery', 'filterPeriod', 'perPage'], true)) {
             $this->resetPage();
+        }
+        if (in_array($propertyName, ['staffSearch', 'staffPerPage'], true)) {
+            $this->resetPage('staffPage');
         }
     }
 
@@ -397,10 +404,21 @@ new class extends Component
         }
         uasort($drinkTotals, fn($a, $b) => $b['cups'] <=> $a['cups']);
 
-        $users = User::with('branch')
+        $staffQuery = User::with('branch')
             ->orderByRaw('CASE WHEN telegram_chat_id IS NOT NULL THEN 0 ELSE 1 END')
-            ->orderBy('name')
-            ->get();
+            ->orderBy('name');
+
+        if (!empty($this->staffSearch)) {
+            $s = trim($this->staffSearch);
+            $staffQuery->where(function ($sq) use ($s) {
+                $sq->where('name', 'like', "%{$s}%")
+                    ->orWhere('employee_id', 'like', "%{$s}%")
+                    ->orWhere('email', 'like', "%{$s}%")
+                    ->orWhere('telegram_username', 'like', "%{$s}%");
+            });
+        }
+
+        $paginatedStaff = $staffQuery->paginate($this->staffPerPage, pageName: 'staffPage');
 
         return [
             'branches' => Branch::all(),
@@ -411,7 +429,8 @@ new class extends Component
             'meetingCount' => $allFilteredOrders->where('order_type', 'meeting')->count(),
             'extendCount' => $allFilteredOrders->where('order_type', 'extend')->count(),
             'drinkTotals' => $drinkTotals,
-            'users' => $users,
+            'filterUsers' => User::orderBy('name')->get(),
+            'users' => $paginatedStaff,
             'currentHostUrl' => request()->getSchemeAndHttpHost(),
         ];
     }
@@ -572,7 +591,7 @@ new class extends Component
                         <label class="block text-[10px] font-bold uppercase text-[#7C6A60] mb-1">👤 {{ __('cbvh.col_requester') }}</label>
                         <select wire:model.live="filterUserId" class="w-full text-xs p-2 rounded-xl border border-[#E8DDD6] dark:border-[#3D2F29] bg-[#FAF6F3] dark:bg-[#1E1715] font-semibold text-[#2C211C] dark:text-[#F5EDE7]">
                             <option value="all">{{ __('cbvh.all_staff') }}</option>
-                            @foreach($users as $u)
+                            @foreach($filterUsers as $u)
                                 <option value="{{ $u->id }}">{{ $u->name }} ({{ $u->branch?->code }})</option>
                             @endforeach
                         </select>
@@ -790,7 +809,7 @@ new class extends Component
                         <form wire:submit="createStaffAccount" class="grid grid-cols-1 sm:grid-cols-5 gap-2.5">
                             <input type="text" wire:model="newName" placeholder="{{ __('cbvh.full_name') }}" required
                                    class="text-xs p-2.5 rounded-xl border border-[#E8DDD6] bg-[#FAF6F3]" />
-                            <input type="text" wire:model="newEmployeeId" placeholder="{{ __('cbvh.employee_id') }} (e.g. EMP-001)" required
+                            <input type="text" wire:model="newEmployeeId" placeholder="{{ __('cbvh.employee_id') }} (e.g. A100888)" required
                                    class="text-xs p-2.5 rounded-xl border border-[#E8DDD6] bg-[#FAF6F3]" />
                             <input type="password" wire:model="newPassword" placeholder="{{ __('cbvh.password') }}" required
                                    class="text-xs p-2.5 rounded-xl border border-[#E8DDD6] bg-[#FAF6F3]" />
@@ -816,13 +835,27 @@ new class extends Component
 
                     <!-- Staff Directory -->
                     <div class="bg-white dark:bg-[#241C19] rounded-2xl border border-[#E8DDD6] dark:border-[#3D2F29] shadow-2xs overflow-hidden">
-                        <div class="px-5 py-4 border-b border-[#E8DDD6]">
-                            <h2 class="font-bold text-sm">👥 {{ __('cbvh.team_title') }}</h2>
-                            <p class="text-xs text-[#7C6A60] mt-0.5">{{ __('cbvh.team_subtitle') }}</p>
+                        <div class="px-5 py-4 border-b border-[#E8DDD6] dark:border-[#3D2F29] flex flex-wrap items-center justify-between gap-3">
+                            <div>
+                                <h2 class="font-bold text-sm">👥 {{ __('cbvh.team_title') }}</h2>
+                                <p class="text-xs text-[#7C6A60] mt-0.5">{{ __('cbvh.team_subtitle') }}</p>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <input type="text" wire:model.live.debounce.300ms="staffSearch"
+                                       placeholder="🔍 Search name / ID (e.g. A100888)..."
+                                       class="text-xs px-3 py-1.5 rounded-xl border border-[#E8DDD6] dark:border-[#3D2F29] bg-[#FAF6F3] dark:bg-[#1A1412] text-[#2C211C] dark:text-[#F5EDE7] focus:border-[#9E6B55] focus:outline-hidden w-44 sm:w-56" />
+                                <select wire:model.live="staffPerPage"
+                                        class="text-xs px-2.5 py-1.5 rounded-xl border border-[#E8DDD6] dark:border-[#3D2F29] bg-[#FAF6F3] dark:bg-[#1A1412] font-semibold text-[#2C211C] dark:text-[#F5EDE7]">
+                                    <option value="10">10 / page</option>
+                                    <option value="25">25 / page</option>
+                                    <option value="50">50 / page</option>
+                                    <option value="100">100 / page</option>
+                                </select>
+                            </div>
                         </div>
 
                         <div class="divide-y divide-[#FAF6F3] dark:divide-[#3D2F29]">
-                            @foreach($users as $u)
+                            @forelse($users as $u)
                                 <div class="p-4 flex flex-wrap items-center justify-between gap-3 text-xs">
                                     <div class="min-w-[180px]">
                                         <div class="font-bold text-[#2C211C] dark:text-[#F5EDE7] flex items-center space-x-1.5">
@@ -870,8 +903,24 @@ new class extends Component
                                         @endif
                                     </div>
                                 </div>
-                            @endforeach
+                            @empty
+                                <div class="p-8 text-center text-xs text-[#7C6A60]">
+                                    No staff accounts match your search.
+                                </div>
+                            @endforelse
                         </div>
+
+                        <!-- Staff Directory Pagination Footer -->
+                        @if($users->hasPages() || $users->total() > 0)
+                            <div class="p-4 border-t border-[#E8DDD6] dark:border-[#3D2F29] flex flex-wrap items-center justify-between gap-3 text-xs bg-[#FAF6F3]/50 dark:bg-[#1E1715]/50">
+                                <div class="text-[#7C6A60] dark:text-[#BBA79D]">
+                                    Showing <span class="font-bold text-[#2C211C] dark:text-[#F5EDE7]">{{ $users->firstItem() ?? 0 }}</span>–<span class="font-bold text-[#2C211C] dark:text-[#F5EDE7]">{{ $users->lastItem() ?? 0 }}</span> of <span class="font-bold text-[#2C211C] dark:text-[#F5EDE7]">{{ $users->total() }}</span> staff
+                                </div>
+                                <div class="scale-90 origin-right">
+                                    {{ $users->links() }}
+                                </div>
+                            </div>
+                        @endif
                     </div>
                 </div>
 

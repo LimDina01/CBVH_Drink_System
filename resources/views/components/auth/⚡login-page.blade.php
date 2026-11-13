@@ -42,8 +42,8 @@ new class extends Component
             return;
         }
 
-        $user = User::where('employee_id', $input)
-            ->orWhere('email', $input)
+        $user = User::whereRaw('LOWER(employee_id) = ?', [strtolower($input)])
+            ->orWhereRaw('LOWER(email) = ?', [strtolower($input)])
             ->first();
 
         if (!$user || !Hash::check($this->password, $user->password)) {

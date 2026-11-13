@@ -953,4 +953,39 @@ class BookingSystemTest extends TestCase
             ->assertStatus(200)
             ->assertSee('Are you sure you want to sign out?');
     }
+
+    public function test_admin_staff_directory_supports_search_and_pagination_with_case_insensitive_employee_id(): void
+    {
+        $admin = User::where('role', 'admin')->first();
+        $hq = Branch::where('code', 'HQ')->first();
+
+        // Create user with employee id A100888
+        User::create([
+            'name' => 'John Doe',
+            'employee_id' => 'A100888',
+            'email' => 'a100888@cbvh.internal',
+            'password' => bcrypt('password123'),
+            'role' => 'employee',
+            'branch_id' => $hq->id,
+        ]);
+
+        Livewire::actingAs($admin)
+            ->test('admin.approval-portal')
+            ->set('activeSection', 'team')
+            ->assertSee('A100888')
+            ->set('staffSearch', 'A100888')
+            ->assertSee('John Doe')
+            ->set('staffSearch', 'non_existing_999')
+            ->assertSee('No staff accounts match your search.');
+
+        // Test login with lowercase a100888
+        Livewire::test('auth.login-page')
+            ->set('loginId', 'a100888')
+            ->set('password', 'password123')
+            ->call('login')
+            ->assertRedirect('/');
+
+        $this->assertAuthenticated();
+        $this->assertSame('A100888', Auth::user()->employee_id);
+    }
 }
