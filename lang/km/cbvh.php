@@ -224,6 +224,8 @@ return [
     'preset_all_time' => 'ទាំងអស់',
     'preset_custom' => 'កំណត់ផ្ទាល់ខ្លួន',
     'search_orders_placeholder' => 'ស្វែងរកលេខកម្ម៉ង់ ឈ្មោះ បន្ទប់...',
+    'show' => 'បង្ហាញ',
+    'orders_per_page' => 'ការកម្ម៉ង់ក្នុងមួយទំព័រ',
     'order_type' => 'ប្រភេទ',
     'all_types' => 'គ្រប់ប្រភេទ',
     'status' => 'ស្ថានភាព',

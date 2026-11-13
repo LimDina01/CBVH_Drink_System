@@ -486,7 +486,10 @@ class BookingSystemTest extends TestCase
             ->set('filterUserId', $admin->id)
             ->assertSeeText('#' . $order->id)
             ->set('searchQuery', 'NonExistentXYZ999')
-            ->assertDontSeeText('#' . $order->id);
+            ->assertDontSeeText('#' . $order->id)
+            ->set('searchQuery', '')
+            ->set('perPage', 30)
+            ->assertSet('perPage', 30);
     }
 
     public function test_telegram_webhook_does_not_auto_create_unverified_accounts(): void

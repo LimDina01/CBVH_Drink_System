@@ -1,6 +1,7 @@
 <?php
 
 use Livewire\Component;
+use Livewire\WithPagination;
 use App\Models\Branch;
 use App\Models\DrinkOrder;
 use App\Models\User;
@@ -11,6 +12,8 @@ use Illuminate\Support\Facades\Storage;
 
 new class extends Component
 {
+    use WithPagination;
+
     public $activeSection = 'reports'; // 'reports', 'team'
 
     // --- Report Filters ---
@@ -20,6 +23,7 @@ new class extends Component
     public $filterStatus = 'all';
     public $filterPeriod = 'this_month'; // 'today', 'this_month', 'last_month', 'all', 'custom'
     public $searchQuery = '';
+    public int $perPage = 15;
     public $dateFrom;
     public $dateTo;
 
@@ -59,16 +63,17 @@ new class extends Component
             $this->dateFrom = null;
             $this->dateTo = null;
         }
+        $this->resetPage();
     }
 
-    public function updatedDateFrom(): void
+    public function updated($propertyName): void
     {
-        $this->filterPeriod = 'custom';
-    }
-
-    public function updatedDateTo(): void
-    {
-        $this->filterPeriod = 'custom';
+        if (in_array($propertyName, ['dateFrom', 'dateTo'], true)) {
+            $this->filterPeriod = 'custom';
+        }
+        if (in_array($propertyName, ['filterBranchId', 'filterUserId', 'filterType', 'filterStatus', 'dateFrom', 'dateTo', 'searchQuery', 'filterPeriod', 'perPage'], true)) {
+            $this->resetPage();
+        }
     }
 
     public function createStaffAccount(): void
@@ -367,11 +372,12 @@ new class extends Component
     {
         DrinkOrder::autoCompleteExpiredDeliveries();
 
-        $orders = $this->buildFilteredOrdersQuery()->get();
-        $totalCups = $orders->sum(fn($o) => $o->items->sum('quantity'));
+        $allFilteredOrders = $this->buildFilteredOrdersQuery()->get();
+        $paginatedOrders = $this->buildFilteredOrdersQuery()->paginate($this->perPage);
+        $totalCups = $allFilteredOrders->sum(fn($o) => $o->items->sum('quantity'));
 
         $drinkTotals = [];
-        foreach ($orders as $order) {
+        foreach ($allFilteredOrders as $order) {
             foreach ($order->items as $it) {
                 $base = \App\Support\CbvhLocale::toBaseDrinkName($it->drinkItem?->name ?? 'Other');
                 $category = $it->drinkItem?->category ?? 'drink';
@@ -394,12 +400,12 @@ new class extends Component
 
         return [
             'branches' => Branch::all(),
-            'orders' => $orders,
-            'totalOrders' => $orders->count(),
+            'orders' => $paginatedOrders,
+            'totalOrders' => $allFilteredOrders->count(),
             'totalCups' => $totalCups,
-            'quickCount' => $orders->where('order_type', 'instant')->count(),
-            'meetingCount' => $orders->where('order_type', 'meeting')->count(),
-            'extendCount' => $orders->where('order_type', 'extend')->count(),
+            'quickCount' => $allFilteredOrders->where('order_type', 'instant')->count(),
+            'meetingCount' => $allFilteredOrders->where('order_type', 'meeting')->count(),
+            'extendCount' => $allFilteredOrders->where('order_type', 'extend')->count(),
             'drinkTotals' => $drinkTotals,
             'users' => $users,
             'currentHostUrl' => request()->getSchemeAndHttpHost(),
@@ -747,6 +753,26 @@ new class extends Component
                         @endforelse
                     </tbody>
                 </table>
+
+                <!-- Pagination Links & Per-Page Controls -->
+                <div class="p-4 border-t border-[#FAF6F3] dark:border-[#3D2F29] flex flex-wrap items-center justify-between gap-3">
+                    <div class="flex items-center space-x-2 text-xs text-[#7C6A60]">
+                        <span>{{ __('cbvh.show') }}</span>
+                        <select wire:model.live="perPage" class="text-xs py-1 px-2.5 rounded-lg border border-[#E8DDD6] dark:border-[#3D2F29] bg-[#FAF6F3] dark:bg-[#1E1715] font-bold text-[#2C211C] dark:text-[#F5EDE7]">
+                            <option value="15">15</option>
+                            <option value="30">30</option>
+                            <option value="50">50</option>
+                            <option value="100">100</option>
+                        </select>
+                        <span>{{ __('cbvh.orders_per_page') }}</span>
+                    </div>
+
+                    @if($orders->hasPages())
+                        <div class="scale-90 sm:scale-100 origin-right">
+                            {{ $orders->links() }}
+                        </div>
+                    @endif
+                </div>
             </div>
         @endif
 

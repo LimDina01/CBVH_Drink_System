@@ -179,6 +179,8 @@ return [
     'preset_all_time' => 'All Time',
     'preset_custom' => 'Custom',
     'search_orders_placeholder' => 'Search Order #, Requester, Room...',
+    'show' => 'Show',
+    'orders_per_page' => 'orders per page',
     'order_type' => 'Order Type',
     'all_types' => 'All Types',
     'status' => 'Status',
