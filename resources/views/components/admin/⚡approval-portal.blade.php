@@ -7,6 +7,7 @@ use App\Models\DrinkItem;
 use App\Models\DrinkOrder;
 use App\Models\User;
 use App\Services\TelegramService;
+use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Storage;
@@ -27,6 +28,7 @@ new class extends Component
     public string $drinkNameEn = '';
     public string $drinkNameKm = '';
     public string $drinkCategory = 'coffee';
+    public array $drinkTargetBranches = [];
     public $drinkBranchId = null;
     public string $drinkDescriptionEn = '';
     public string $drinkDescriptionKm = '';
@@ -291,7 +293,7 @@ new class extends Component
         $this->drinkNameEn = '';
         $this->drinkNameKm = '';
         $this->drinkCategory = 'coffee';
-        $this->drinkBranchId = Branch::first()?->id;
+        $this->drinkTargetBranches = Branch::pluck('id')->map(fn($id) => (int) $id)->all();
         $this->drinkDescriptionEn = '';
         $this->drinkDescriptionKm = '';
         $this->drinkIsAvailable = true;
@@ -327,7 +329,8 @@ new class extends Component
         $this->drinkNameEn = $drink->name;
         $this->drinkNameKm = $drink->name_km ?? '';
         $this->drinkCategory = $drink->category ?? 'coffee';
-        $this->drinkBranchId = $drink->branch_id;
+        $matching = DrinkItem::where('name', $drink->name)->pluck('branch_id')->map(fn($id) => (int) $id)->all();
+        $this->drinkTargetBranches = !empty($matching) ? $matching : [(int) $drink->branch_id];
         $this->drinkDescriptionEn = $drink->description ?? '';
         $this->drinkDescriptionKm = $drink->description_km ?? '';
         $this->drinkIsAvailable = (bool) $drink->is_available;
@@ -454,12 +457,19 @@ new class extends Component
         $this->flashType = 'success';
     }
 
+    public function deleteDrinkGroup(string $name): void
+    {
+        DrinkItem::where('name', $name)->delete();
+        $this->flashMessage = __('cbvh.drink_deleted_success') . " ({$name}) across all branches";
+        $this->flashType = 'success';
+    }
+
     public function saveDrink(): void
     {
         $this->validate([
             'drinkNameEn' => 'required|min:2|max:100',
             'drinkCategory' => 'required|string|max:50',
-            'drinkBranchId' => 'nullable|exists:branches,id',
+            'drinkTargetBranches' => 'required|array|min:1',
         ]);
 
         $cleanedLayers = [];
@@ -489,24 +499,61 @@ new class extends Component
             }
         }
 
-        $data = [
-            'branch_id' => $this->drinkBranchId ?: (Branch::first()?->id ?? 1),
-            'name' => trim($this->drinkNameEn),
-            'name_km' => trim($this->drinkNameKm) ?: null,
-            'category' => strtolower(trim($this->drinkCategory)),
-            'description' => trim($this->drinkDescriptionEn) ?: null,
-            'description_km' => trim($this->drinkDescriptionKm) ?: null,
-            'is_available' => (bool) $this->drinkIsAvailable,
-            'options_config' => ['layers' => $cleanedLayers],
-        ];
+        $name = trim($this->drinkNameEn);
+        $nameKm = trim($this->drinkNameKm) ?: null;
+        $category = strtolower(trim($this->drinkCategory));
+        $desc = trim($this->drinkDescriptionEn) ?: null;
+        $descKm = trim($this->drinkDescriptionKm) ?: null;
 
         if ($this->editingDrinkId) {
             $drink = DrinkItem::findOrFail($this->editingDrinkId);
-            $drink->update($data);
-            $this->flashMessage = __('cbvh.drink_updated_success') . " ({$drink->name})";
+            $oldName = $drink->name;
+
+            foreach ($this->drinkTargetBranches as $branchId) {
+                $existing = DrinkItem::where('branch_id', $branchId)
+                    ->where(function ($q) use ($drink, $oldName) {
+                        $q->where('id', $drink->id)->orWhere('name', $oldName);
+                    })->first();
+
+                if ($existing) {
+                    $existing->update([
+                        'name' => $name,
+                        'name_km' => $nameKm,
+                        'category' => $category,
+                        'description' => $desc,
+                        'description_km' => $descKm,
+                        'is_available' => (bool) $this->drinkIsAvailable,
+                        'options_config' => ['layers' => $cleanedLayers],
+                    ]);
+                } else {
+                    DrinkItem::create([
+                        'branch_id' => $branchId,
+                        'name' => $name,
+                        'name_km' => $nameKm,
+                        'category' => $category,
+                        'description' => $desc,
+                        'description_km' => $descKm,
+                        'is_available' => (bool) $this->drinkIsAvailable,
+                        'options_config' => ['layers' => $cleanedLayers],
+                    ]);
+                }
+            }
+            $this->flashMessage = __('cbvh.drink_updated_success') . " ({$name})";
         } else {
-            $drink = DrinkItem::create($data);
-            $this->flashMessage = __('cbvh.drink_created_success') . " ({$drink->name})";
+            foreach ($this->drinkTargetBranches as $branchId) {
+                DrinkItem::updateOrCreate(
+                    ['branch_id' => $branchId, 'name' => $name],
+                    [
+                        'name_km' => $nameKm,
+                        'category' => $category,
+                        'description' => $desc,
+                        'description_km' => $descKm,
+                        'is_available' => (bool) $this->drinkIsAvailable,
+                        'options_config' => ['layers' => $cleanedLayers],
+                    ]
+                );
+            }
+            $this->flashMessage = __('cbvh.drink_created_success') . " ({$name})";
         }
 
         $this->flashType = 'success';
@@ -722,7 +769,7 @@ new class extends Component
 
         $paginatedStaff = $staffQuery->paginate($this->staffPerPage, pageName: 'staffPage');
 
-        $drinkQuery = DrinkItem::with('branch')->latest();
+        $drinkQuery = DrinkItem::with('branch')->orderBy('name');
         if ($this->drinkBranchFilter !== 'all') {
             $drinkQuery->where('branch_id', $this->drinkBranchFilter);
         }
@@ -738,7 +785,45 @@ new class extends Component
                     ->orWhere('category', 'like', "%{$s}%");
             });
         }
-        $paginatedDrinks = $drinkQuery->paginate($this->drinkPerPage, pageName: 'drinkPage');
+
+        if ($this->drinkBranchFilter === 'all') {
+            $allDrinks = $drinkQuery->get();
+            $groupedCollection = $allDrinks->groupBy(fn($d) => strtolower(trim($d->name)))
+                ->map(function ($group) {
+                    $primary = $group->first();
+                    return (object) [
+                        'id' => $primary->id,
+                        'name' => $primary->name,
+                        'name_km' => $primary->name_km,
+                        'category' => $primary->category,
+                        'description' => $primary->description,
+                        'description_km' => $primary->description_km,
+                        'normalized_layers' => $primary->normalized_layers,
+                        'branch' => null,
+                        'is_available' => $group->some(fn($i) => (bool) $i->is_available),
+                        'branch_items' => $group->map(fn($item) => (object) [
+                            'id' => $item->id,
+                            'branch_id' => $item->branch_id,
+                            'branch_code' => $item->branch?->code ?? "B{$item->branch_id}",
+                            'branch_name' => $item->branch?->name ?? "Branch {$item->branch_id}",
+                            'is_hq' => (bool) $item->branch?->is_hq,
+                            'is_available' => (bool) $item->is_available,
+                        ])->values()->all(),
+                    ];
+                })->values();
+
+            $currentPage = LengthAwarePaginator::resolveCurrentPage('drinkPage');
+            $slice = $groupedCollection->slice(($currentPage - 1) * $this->drinkPerPage, $this->drinkPerPage)->values();
+            $paginatedDrinks = new LengthAwarePaginator(
+                $slice,
+                $groupedCollection->count(),
+                $this->drinkPerPage,
+                $currentPage,
+                ['path' => LengthAwarePaginator::resolveCurrentPath(), 'pageName' => 'drinkPage']
+            );
+        } else {
+            $paginatedDrinks = $drinkQuery->paginate($this->drinkPerPage, pageName: 'drinkPage');
+        }
         $drinkCategories = DrinkItem::select('category')->distinct()->pluck('category')->filter()->values()->all();
         if (empty($drinkCategories)) {
             $drinkCategories = ['coffee', 'tea', 'special'];
@@ -1393,9 +1478,9 @@ new class extends Component
                         <label class="text-xs font-semibold text-[#7C6A60] shrink-0">Branch:</label>
                         <select wire:model.live="drinkBranchFilter"
                                 class="text-xs p-2.5 rounded-xl border border-[#E8DDD6] dark:border-[#3D2F29] bg-[#FAF6F3] dark:bg-[#1A1412] text-[#2C211C] dark:text-[#F5EDE7] font-semibold cursor-pointer">
-                            <option value="all">{{ __('cbvh.all_branches') }}</option>
+                            <option value="all">🌐 {{ __('cbvh.all_branches') }} (Grouped)</option>
                             @foreach($branches as $b)
-                                <option value="{{ $b->id }}">{{ $b->code }} {{ $b->is_hq ? '(HQ)' : '' }}</option>
+                                <option value="{{ $b->id }}">🏢 {{ $b->code }} {{ $b->is_hq ? '(HQ)' : '' }}</option>
                             @endforeach
                         </select>
                     </div>
@@ -1431,9 +1516,13 @@ new class extends Component
                                     </div>
 
                                     <div class="flex items-center space-x-1 shrink-0">
-                                        @if($drink->branch)
+                                        @if(!empty($drink->branch))
                                             <span class="px-2 py-0.5 rounded-lg text-[10px] font-bold uppercase tracking-wider bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
                                                 🏢 {{ $drink->branch->code }}{{ $drink->branch->is_hq ? ' (HQ)' : '' }}
+                                            </span>
+                                        @elseif(!empty($drink->branch_items))
+                                            <span class="px-2 py-0.5 rounded-lg text-[10px] font-bold uppercase tracking-wider bg-purple-50 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
+                                                🏢 All Branches
                                             </span>
                                         @endif
                                         <span class="px-2 py-0.5 rounded-lg text-[10px] font-bold uppercase tracking-wider bg-[#F5EDE7] dark:bg-[#3D2F29] text-[#835440] dark:text-[#E8CFC1]">
@@ -1462,24 +1551,47 @@ new class extends Component
                             </div>
 
                             <!-- Card Action Buttons -->
-                            <div class="pt-3 border-t border-[#E8DDD6] dark:border-[#3D2F29] flex items-center justify-between gap-2">
-                                <button type="button" wire:click="toggleDrinkAvailability({{ $drink->id }})"
-                                        class="px-2.5 py-1.5 rounded-xl text-[11px] font-bold border transition cursor-pointer {{ $drink->is_available ? 'bg-emerald-50 border-emerald-300 text-emerald-800 hover:bg-emerald-100' : 'bg-rose-50 border-rose-300 text-rose-800 hover:bg-rose-100' }}"
-                                        title="{{ __('cbvh.toggle_stock') }}">
-                                    {{ $drink->is_available ? '🟢 ' . __('cbvh.in_stock') : '🔴 ' . __('cbvh.out_of_stock') }}
-                                </button>
+                            <div class="pt-3 border-t border-[#E8DDD6] dark:border-[#3D2F29] flex flex-wrap items-center justify-between gap-2">
+                                @if(!empty($drink->branch_items))
+                                    <!-- Per-branch toggles in grouped mode -->
+                                    <div class="flex flex-wrap items-center gap-1.5">
+                                        @foreach($drink->branch_items as $bItem)
+                                            <button type="button" wire:click="toggleDrinkAvailability({{ $bItem->id }})"
+                                                    class="px-2.5 py-1.5 rounded-xl text-[11px] font-bold border transition cursor-pointer {{ $bItem->is_available ? 'bg-emerald-50 border-emerald-300 text-emerald-800 hover:bg-emerald-100' : 'bg-rose-50 border-rose-300 text-rose-800 hover:bg-rose-100' }}"
+                                                    title="{{ $bItem->branch_name }}">
+                                                {{ $bItem->branch_code }}: {{ $bItem->is_available ? '🟢 ' . __('cbvh.in_stock') : '🔴 ' . __('cbvh.out_of_stock') }}
+                                            </button>
+                                        @endforeach
+                                    </div>
+                                @else
+                                    <!-- Single branch toggle -->
+                                    <button type="button" wire:click="toggleDrinkAvailability({{ $drink->id }})"
+                                            class="px-2.5 py-1.5 rounded-xl text-[11px] font-bold border transition cursor-pointer {{ $drink->is_available ? 'bg-emerald-50 border-emerald-300 text-emerald-800 hover:bg-emerald-100' : 'bg-rose-50 border-rose-300 text-rose-800 hover:bg-rose-100' }}"
+                                            title="{{ __('cbvh.toggle_stock') }}">
+                                        {{ $drink->is_available ? '🟢 ' . __('cbvh.in_stock') : '🔴 ' . __('cbvh.out_of_stock') }}
+                                    </button>
+                                @endif
 
                                 <div class="flex items-center space-x-1.5">
                                     <button type="button" wire:click="openEditDrinkModal({{ $drink->id }})"
                                             class="px-3 py-1.5 rounded-xl bg-[#FAF6F3] dark:bg-[#1A1412] hover:bg-[#F5EDE7] text-[#835440] dark:text-[#E8CFC1] font-bold text-xs border border-[#E8DDD6] dark:border-[#3D2F29] transition cursor-pointer">
                                         ✏️ {{ __('cbvh.edit_drink') }}
                                     </button>
-                                    <button type="button" wire:click="deleteDrink({{ $drink->id }})"
-                                            wire:confirm="{{ __('cbvh.confirm_delete_drink') }}"
-                                            class="p-1.5 rounded-xl bg-rose-50 dark:bg-rose-950/40 text-rose-600 hover:bg-rose-100 transition cursor-pointer text-xs"
-                                            title="Delete Drink">
-                                        🗑️
-                                    </button>
+                                    @if(!empty($drink->branch_items))
+                                        <button type="button" wire:click="deleteDrinkGroup('{{ addslashes($drink->name) }}')"
+                                                wire:confirm="{{ __('cbvh.confirm_delete_drink') }}"
+                                                class="p-1.5 rounded-xl bg-rose-50 dark:bg-rose-950/40 text-rose-600 hover:bg-rose-100 transition cursor-pointer text-xs"
+                                                title="Delete Drink Across All Branches">
+                                            🗑️
+                                        </button>
+                                    @else
+                                        <button type="button" wire:click="deleteDrink({{ $drink->id }})"
+                                                wire:confirm="{{ __('cbvh.confirm_delete_drink') }}"
+                                                class="p-1.5 rounded-xl bg-rose-50 dark:bg-rose-950/40 text-rose-600 hover:bg-rose-100 transition cursor-pointer text-xs"
+                                                title="Delete Drink">
+                                            🗑️
+                                        </button>
+                                    @endif
                                 </div>
                             </div>
                         </div>
@@ -1565,15 +1677,18 @@ new class extends Component
 
                         <div>
                             <label class="block text-xs font-semibold text-[#7C6A60] dark:text-[#BBA79D] mb-1">
-                                Branch
+                                Target Branches <span class="text-rose-500">*</span>
                             </label>
-                            <select wire:model="drinkBranchId"
-                                    class="w-full text-xs p-2.5 rounded-xl border border-[#E8DDD6] dark:border-[#3D2F29] bg-[#FAF6F3] dark:bg-[#1A1412] text-[#2C211C] dark:text-[#F5EDE7] focus:border-[#9E6B55] focus:outline-hidden">
-                                <option value="">{{ __('cbvh.all_branches') }}</option>
+                            <div class="flex flex-wrap items-center gap-2 pt-0.5">
                                 @foreach($branches as $b)
-                                    <option value="{{ $b->id }}">{{ $b->code }} {{ $b->is_hq ? '(HQ)' : '' }}</option>
+                                    <label class="flex items-center space-x-1.5 text-xs font-bold cursor-pointer bg-[#FAF6F3] dark:bg-[#1A1412] px-2.5 py-2 rounded-xl border border-[#E8DDD6] dark:border-[#3D2F29]">
+                                        <input type="checkbox" value="{{ $b->id }}" wire:model="drinkTargetBranches"
+                                               class="rounded text-[#9E6B55] focus:ring-[#9E6B55]">
+                                        <span>🏢 {{ $b->code }}{{ $b->is_hq ? ' (HQ)' : '' }}</span>
+                                    </label>
                                 @endforeach
-                            </select>
+                            </div>
+                            @error('drinkTargetBranches') <span class="text-xs text-rose-500 mt-1 block">{{ $message }}</span> @enderror
                         </div>
                     </div>
 
