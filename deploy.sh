@@ -3,7 +3,8 @@ set -e
 
 echo "🚀 Deploying CBVH Drink System (Production)..."
 
-# 1. Pull latest changes
+# 1. Reset any local changes to tracked files (e.g. seeders) and pull latest code
+git checkout -- database/seeders/DatabaseSeeder.php 2>/dev/null || true
 git pull origin main
 
 # 2. Ensure deploy user & web server have write access
