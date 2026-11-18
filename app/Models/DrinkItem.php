@@ -45,6 +45,32 @@ class DrinkItem extends Model
         return \App\Support\CbvhLocale::drinkDescription($this->description) ?: $this->description;
     }
 
+    public function getDisplayIconAttribute(): string
+    {
+        $config = $this->options_config ?? [];
+        if (!empty($config['icon'])) {
+            return $config['icon'];
+        }
+
+        return match(strtolower($this->category ?? '')) {
+            'coffee' => '☕',
+            'tea' => '🍵',
+            'juice' => '🍊',
+            'shake' => '🥤',
+            default => '🧋',
+        };
+    }
+
+    public function getDisplayImageAttribute(): ?string
+    {
+        $config = $this->options_config ?? [];
+        if (!empty($config['image_path'])) {
+            return asset('storage/' . $config['image_path']);
+        }
+
+        return null;
+    }
+
     /**
      * Normalized dynamic layers for customization options.
      * Supports both new dynamic format and legacy preset format.

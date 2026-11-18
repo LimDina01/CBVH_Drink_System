@@ -2,6 +2,7 @@
 
 use Livewire\Component;
 use Livewire\WithPagination;
+use Livewire\WithFileUploads;
 use App\Models\Branch;
 use App\Models\DrinkItem;
 use App\Models\DrinkOrder;
@@ -15,6 +16,7 @@ use Illuminate\Support\Facades\Storage;
 new class extends Component
 {
     use WithPagination;
+    use WithFileUploads;
 
     public $activeSection = 'reports'; // 'reports', 'team', 'drinks'
 
@@ -28,6 +30,9 @@ new class extends Component
     public string $drinkNameEn = '';
     public string $drinkNameKm = '';
     public string $drinkCategory = 'coffee';
+    public string $drinkIcon = '☕';
+    public $drinkImage = null;
+    public ?string $existingImagePath = null;
     public array $drinkTargetBranches = [];
     public $drinkBranchId = null;
     public string $drinkDescriptionEn = '';
@@ -293,6 +298,9 @@ new class extends Component
         $this->drinkNameEn = '';
         $this->drinkNameKm = '';
         $this->drinkCategory = 'coffee';
+        $this->drinkIcon = '☕';
+        $this->drinkImage = null;
+        $this->existingImagePath = null;
         $this->drinkTargetBranches = Branch::pluck('id')->map(fn($id) => (int) $id)->all();
         $this->drinkDescriptionEn = '';
         $this->drinkDescriptionKm = '';
@@ -329,6 +337,10 @@ new class extends Component
         $this->drinkNameEn = $drink->name;
         $this->drinkNameKm = $drink->name_km ?? '';
         $this->drinkCategory = $drink->category ?? 'coffee';
+        $config = $drink->options_config ?? [];
+        $this->drinkIcon = $config['icon'] ?? $drink->display_icon;
+        $this->existingImagePath = $config['image_path'] ?? null;
+        $this->drinkImage = null;
         $matching = DrinkItem::where('name', $drink->name)->pluck('branch_id')->map(fn($id) => (int) $id)->all();
         $this->drinkTargetBranches = !empty($matching) ? $matching : [(int) $drink->branch_id];
         $this->drinkDescriptionEn = $drink->description ?? '';
@@ -342,6 +354,14 @@ new class extends Component
     {
         $this->showDrinkModal = false;
         $this->editingDrinkId = null;
+        $this->drinkImage = null;
+        $this->existingImagePath = null;
+    }
+
+    public function removeDrinkImage(): void
+    {
+        $this->drinkImage = null;
+        $this->existingImagePath = null;
     }
 
     public function addLayer(): void
@@ -470,6 +490,7 @@ new class extends Component
             'drinkNameEn' => 'required|min:2|max:100',
             'drinkCategory' => 'required|string|max:50',
             'drinkTargetBranches' => 'required|array|min:1',
+            'drinkImage' => 'nullable|image|max:2048',
         ]);
 
         $cleanedLayers = [];
@@ -499,6 +520,17 @@ new class extends Component
             }
         }
 
+        $imagePath = $this->existingImagePath;
+        if ($this->drinkImage) {
+            $imagePath = $this->drinkImage->store('drinks', 'public');
+        }
+
+        $optionsConfig = [
+            'layers' => $cleanedLayers,
+            'icon' => $this->drinkIcon ?: '☕',
+            'image_path' => $imagePath,
+        ];
+
         $name = trim($this->drinkNameEn);
         $nameKm = trim($this->drinkNameKm) ?: null;
         $category = strtolower(trim($this->drinkCategory));
@@ -524,7 +556,7 @@ new class extends Component
                         'description' => $desc,
                         'description_km' => $descKm,
                         'is_available' => (bool) $this->drinkIsAvailable,
-                        'options_config' => ['layers' => $cleanedLayers],
+                        'options_config' => $optionsConfig,
                     ]);
                 } else {
                     DrinkItem::create([
@@ -535,7 +567,7 @@ new class extends Component
                         'description' => $desc,
                         'description_km' => $descKm,
                         'is_available' => (bool) $this->drinkIsAvailable,
-                        'options_config' => ['layers' => $cleanedLayers],
+                        'options_config' => $optionsConfig,
                     ]);
                 }
             }
@@ -557,12 +589,18 @@ new class extends Component
                         'description' => $desc,
                         'description_km' => $descKm,
                         'is_available' => (bool) $this->drinkIsAvailable,
-                        'options_config' => ['layers' => $cleanedLayers],
+                        'options_config' => $optionsConfig,
                     ]
                 );
             }
             $this->flashMessage = __('cbvh.drink_created_success') . " ({$name})";
         }
+
+        $this->drinkImage = null;
+        $this->existingImagePath = null;
+        $this->flashType = 'success';
+        $this->showDrinkModal = false;
+        $this->editingDrinkId = null;
 
         $this->flashType = 'success';
         $this->showDrinkModal = false;
@@ -807,6 +845,8 @@ new class extends Component
                         'description' => $primary->description,
                         'description_km' => $primary->description_km,
                         'normalized_layers' => $primary->normalized_layers,
+                        'display_icon' => $primary->display_icon,
+                        'display_image' => $primary->display_image,
                         'branch' => null,
                         'is_available' => $group->some(fn($i) => (bool) $i->is_available),
                         'branch_items' => $group->map(fn($item) => (object) [
@@ -1499,53 +1539,73 @@ new class extends Component
                     @forelse($menuDrinks as $drink)
                         <div wire:key="admin-drink-card-{{ $drink->id }}"
                              class="bg-white dark:bg-[#241C19] rounded-2xl border border-[#E8DDD6] dark:border-[#3D2F29] p-5 shadow-2xs hover:shadow-md transition flex flex-col justify-between space-y-4 {{ !$drink->is_available ? 'opacity-70 bg-[#FAF6F3]/50' : '' }}">
-                            <div class="space-y-2.5">
-                                <div class="flex items-start justify-between gap-2">
-                                    <div class="space-y-0.5 min-w-0 flex-1">
-                                        <div class="flex flex-wrap items-center gap-1.5">
-                                            <h3 class="font-bold text-sm text-[#2C211C] dark:text-[#F5EDE7] leading-snug">
-                                                {{ $drink->name }}
-                                            </h3>
-                                            @if($drink->is_available)
-                                                <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 whitespace-nowrap shrink-0">
-                                                    {{ __('cbvh.in_stock') }}
-                                                </span>
-                                            @else
-                                                <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300 whitespace-nowrap shrink-0">
-                                                    {{ __('cbvh.out_of_stock') }}
-                                                </span>
-                                            @endif
-                                        </div>
-                                        @if($drink->name_km)
-                                            <div class="text-xs font-semibold text-[#835440] dark:text-[#E8CFC1]">
-                                                {{ $drink->name_km }}
-                                            </div>
+                            <div class="space-y-3">
+                                <!-- Card Header: Logo/Icon Thumbnail + Title & Status + Badges -->
+                                <div class="flex items-start gap-3">
+                                    <!-- Drink Thumbnail (Preset Emoji or Uploaded Image) -->
+                                    <div class="w-12 h-12 rounded-2xl bg-[#FAF6F3] dark:bg-[#1A1412] border border-[#E8DDD6] dark:border-[#3D2F29] flex items-center justify-center shrink-0 overflow-hidden shadow-2xs">
+                                        @if(!empty($drink->display_image))
+                                            <img src="{{ $drink->display_image }}" alt="{{ $drink->name }}" class="w-full h-full object-cover">
+                                        @else
+                                            <span class="text-2xl select-none">{{ $drink->display_icon ?: '☕' }}</span>
                                         @endif
                                     </div>
 
-                                    <div class="flex items-center space-x-1 shrink-0">
-                                        @if(!empty($drink->branch))
-                                            <span class="px-2 py-0.5 rounded-lg text-[10px] font-bold uppercase tracking-wider bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200 dark:border-blue-800 whitespace-nowrap shrink-0">
-                                                🏢 {{ $drink->branch->code }}{{ $drink->branch->is_hq ? ' (HQ)' : '' }}
-                                            </span>
-                                        @elseif(!empty($drink->branch_items))
-                                            @php
-                                                $bCount = count($drink->branch_items);
-                                                $totalBCount = count($branches);
-                                            @endphp
-                                            @if($bCount >= $totalBCount)
-                                                <span class="px-2 py-0.5 rounded-lg text-[10px] font-bold uppercase tracking-wider bg-purple-50 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300 border border-purple-200 dark:border-purple-800 whitespace-nowrap shrink-0">
-                                                    🏢 All Branches
+                                    <!-- Title, Status, and Scope Badges -->
+                                    <div class="min-w-0 flex-1 space-y-1">
+                                        <div class="flex items-start justify-between gap-2">
+                                            <div class="min-w-0 flex-1">
+                                                <h3 class="font-bold text-sm text-[#2C211C] dark:text-[#F5EDE7] leading-snug break-words">
+                                                    {{ $drink->name }}
+                                                </h3>
+                                                @if($drink->name_km)
+                                                    <div class="text-xs font-semibold text-[#835440] dark:text-[#E8CFC1] leading-tight mt-0.5">
+                                                        {{ $drink->name_km }}
+                                                    </div>
+                                                @endif
+                                            </div>
+
+                                            <!-- Always Single-Line Stock Status Pill -->
+                                            <div class="shrink-0">
+                                                @if($drink->is_available)
+                                                    <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 whitespace-nowrap">
+                                                        <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                                                        {{ __('cbvh.in_stock') }}
+                                                    </span>
+                                                @else
+                                                    <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300 whitespace-nowrap">
+                                                        <span class="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
+                                                        {{ __('cbvh.out_of_stock') }}
+                                                    </span>
+                                                @endif
+                                            </div>
+                                        </div>
+
+                                        <!-- Scope & Category Badges below title -->
+                                        <div class="flex flex-wrap items-center gap-1.5 pt-0.5">
+                                            @if(!empty($drink->branch))
+                                                <span class="px-2 py-0.5 rounded-lg text-[10px] font-bold uppercase tracking-wider bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200 dark:border-blue-800 whitespace-nowrap">
+                                                    🏢 {{ $drink->branch->code }}{{ $drink->branch->is_hq ? ' (HQ)' : '' }}
                                                 </span>
-                                            @else
-                                                <span class="px-2 py-0.5 rounded-lg text-[10px] font-bold uppercase tracking-wider bg-amber-50 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-200 dark:border-amber-800 whitespace-nowrap shrink-0">
-                                                    🏢 {{ collect($drink->branch_items)->pluck('branch_code')->implode(', ') }} Only
-                                                </span>
+                                            @elseif(!empty($drink->branch_items))
+                                                @php
+                                                    $bCount = count($drink->branch_items);
+                                                    $totalBCount = count($branches);
+                                                @endphp
+                                                @if($bCount >= $totalBCount)
+                                                    <span class="px-2 py-0.5 rounded-lg text-[10px] font-bold uppercase tracking-wider bg-purple-50 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300 border border-purple-200 dark:border-purple-800 whitespace-nowrap">
+                                                        🏢 All Branches
+                                                    </span>
+                                                @else
+                                                    <span class="px-2 py-0.5 rounded-lg text-[10px] font-bold uppercase tracking-wider bg-amber-50 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-200 dark:border-amber-800 whitespace-nowrap">
+                                                        🏢 {{ collect($drink->branch_items)->pluck('branch_code')->implode(', ') }} Only
+                                                    </span>
+                                                @endif
                                             @endif
-                                        @endif
-                                        <span class="px-2 py-0.5 rounded-lg text-[10px] font-bold uppercase tracking-wider bg-[#F5EDE7] dark:bg-[#3D2F29] text-[#835440] dark:text-[#E8CFC1] whitespace-nowrap shrink-0">
-                                            {{ $drink->category ?: 'drink' }}
-                                        </span>
+                                            <span class="px-2 py-0.5 rounded-lg text-[10px] font-bold uppercase tracking-wider bg-[#F5EDE7] dark:bg-[#3D2F29] text-[#835440] dark:text-[#E8CFC1] whitespace-nowrap">
+                                                {{ $drink->category ?: 'drink' }}
+                                            </span>
+                                        </div>
                                     </div>
                                 </div>
 
@@ -1645,8 +1705,14 @@ new class extends Component
             <div class="bg-white dark:bg-[#241C19] w-full max-w-2xl rounded-3xl p-6 border border-[#E8DDD6] dark:border-[#3D2F29] shadow-2xl space-y-5 my-6 max-h-[90vh] overflow-y-auto">
                 <div class="flex items-center justify-between border-b border-[#E8DDD6] dark:border-[#3D2F29] pb-3">
                     <div class="flex items-center space-x-3">
-                        <div class="w-10 h-10 rounded-2xl bg-[#F5EDE7] dark:bg-[#3D2F29] text-[#835440] dark:text-[#E8CFC1] flex items-center justify-center text-xl shrink-0">
-                            ☕
+                        <div class="w-10 h-10 rounded-2xl bg-[#F5EDE7] dark:bg-[#3D2F29] text-[#835440] dark:text-[#E8CFC1] flex items-center justify-center text-xl shrink-0 overflow-hidden">
+                            @if($drinkImage)
+                                <img src="{{ $drinkImage->temporaryUrl() }}" class="w-full h-full object-cover">
+                            @elseif($existingImagePath)
+                                <img src="{{ asset('storage/' . $existingImagePath) }}" class="w-full h-full object-cover">
+                            @else
+                                <span>{{ $drinkIcon ?: '☕' }}</span>
+                            @endif
                         </div>
                         <div>
                             <h3 class="font-bold text-sm text-[#2C211C] dark:text-[#F5EDE7]">
@@ -1661,6 +1727,69 @@ new class extends Component
                 </div>
 
                 <form wire:submit="saveDrink" class="space-y-4">
+                    <!-- Drink Icon & Image Selector -->
+                    <div class="p-3.5 rounded-2xl bg-[#FAF6F3] dark:bg-[#1E1715] border border-[#E8DDD6] dark:border-[#3D2F29] space-y-3">
+                        <div class="flex items-center justify-between">
+                            <label class="block text-xs font-bold uppercase tracking-wider text-[#9E6B55]">
+                                Drink Icon & Image (រូបតំណាង)
+                            </label>
+                            <span class="text-[11px] text-[#7C6A60] dark:text-[#BBA79D]">
+                                Choose emoji OR upload logo
+                            </span>
+                        </div>
+
+                        <div class="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+                            <!-- Live Preview Thumbnail -->
+                            <div class="w-16 h-16 rounded-2xl bg-white dark:bg-[#241C19] border-2 border-dashed border-[#9E6B55]/40 flex items-center justify-center shrink-0 overflow-hidden shadow-2xs">
+                                @if($drinkImage)
+                                    <img src="{{ $drinkImage->temporaryUrl() }}" class="w-full h-full object-cover" alt="Uploaded Preview">
+                                @elseif($existingImagePath)
+                                    <img src="{{ asset('storage/' . $existingImagePath) }}" class="w-full h-full object-cover" alt="Current Image">
+                                @else
+                                    <span class="text-3xl select-none">{{ $drinkIcon ?: '☕' }}</span>
+                                @endif
+                            </div>
+
+                            <div class="flex-1 space-y-2.5 w-full">
+                                <!-- Option 1: Choose Preset Emoji Icon -->
+                                <div>
+                                    <span class="text-[11px] font-semibold text-[#7C6A60] dark:text-[#BBA79D] block mb-1">
+                                        Choose Preset Icon:
+                                    </span>
+                                    <div class="flex flex-wrap items-center gap-1.5">
+                                        @foreach(['☕', '🍵', '🧋', '🥤', '🧃', '🥛', '🍋', '🍊', '🥥', '🍓', '🍫', '🧊', '🍯', '🥑', '🫖', '🍶', '🌸', '✨'] as $emoji)
+                                            <button type="button" wire:click="$set('drinkIcon', '{{ $emoji }}')"
+                                                    class="w-7 h-7 rounded-lg text-sm flex items-center justify-center border transition cursor-pointer {{ $drinkIcon === $emoji && !$drinkImage && !$existingImagePath ? 'bg-[#9E6B55] text-white border-[#9E6B55] shadow-xs' : 'bg-white dark:bg-[#241C19] hover:bg-[#F5EDE7] border-[#E8DDD6] dark:border-[#3D2F29]' }}"
+                                                    title="{{ $emoji }}">
+                                                {{ $emoji }}
+                                            </button>
+                                        @endforeach
+                                    </div>
+                                </div>
+
+                                <!-- Option 2: Upload Custom Image -->
+                                <div class="pt-2 border-t border-[#E8DDD6] dark:border-[#3D2F29]/60">
+                                    <div class="flex flex-wrap items-center justify-between gap-1 mb-1">
+                                        <span class="text-[11px] font-semibold text-[#7C6A60] dark:text-[#BBA79D]">
+                                            Or Upload Custom Logo / Photo:
+                                        </span>
+                                        @if($drinkImage || $existingImagePath)
+                                            <button type="button" wire:click="removeDrinkImage"
+                                                    class="text-[11px] font-bold text-rose-600 hover:text-rose-700 underline cursor-pointer">
+                                                ✕ Clear Image (Use Icon)
+                                            </button>
+                                        @endif
+                                    </div>
+                                    <input type="file" wire:model="drinkImage" accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                                           class="block w-full text-xs text-[#7C6A60] file:mr-2 file:py-1 file:px-2.5 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-[#F5EDE7] file:text-[#835440] hover:file:bg-[#9E6B55] hover:file:text-white file:cursor-pointer cursor-pointer" />
+                                    <div wire:loading wire:target="drinkImage" class="text-[11px] font-bold text-[#9E6B55] mt-1">
+                                        ⏳ Loading image preview...
+                                    </div>
+                                    @error('drinkImage') <span class="text-xs text-rose-500 mt-1 block">{{ $message }}</span> @enderror
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                     <!-- Bilingual Drink Name -->
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <div>

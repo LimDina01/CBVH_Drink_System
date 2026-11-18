@@ -827,12 +827,11 @@ new class extends Component
                                  class="{{ $isAvailable ? 'cursor-pointer hover:border-[#9E6B55] active:scale-[0.97]' : 'opacity-60 cursor-not-allowed bg-slate-50 dark:bg-[#1E1715]' }} bg-white dark:bg-[#241C19] p-4 rounded-2xl border {{ $selectedDrinkId === $drink->id ? 'border-[#9E6B55] ring-2 ring-[#9E6B55]/20' : 'border-[#E8DDD6] dark:border-[#3D2F29]' }} transition-all duration-150 shadow-[0_2px_12px_rgba(158,107,85,0.05)] flex flex-col justify-between group">
                                 <div>
                                     <div class="flex items-center justify-between mb-3">
-                                        <div class="w-9 h-9 rounded-xl bg-[#FAF6F3] dark:bg-[#3A2C26] border border-[#E8DDD6] dark:border-[#4A3830] flex items-center justify-center text-lg">
-                                            @if($drink->category === 'coffee') ☕
-                                            @elseif($drink->category === 'tea') 🍵
-                                            @elseif($drink->category === 'juice') 🍊
-                                            @elseif($drink->category === 'shake') 🥤
-                                            @else 🧋
+                                        <div class="w-9 h-9 rounded-xl bg-[#FAF6F3] dark:bg-[#3A2C26] border border-[#E8DDD6] dark:border-[#4A3830] flex items-center justify-center text-lg overflow-hidden shrink-0">
+                                            @if($drink->display_image)
+                                                <img src="{{ $drink->display_image }}" alt="{{ $drink->name }}" class="w-full h-full object-cover" />
+                                            @else
+                                                <span>{{ $drink->display_icon }}</span>
                                             @endif
                                         </div>
                                         @if(!$isAvailable)
@@ -1046,9 +1045,18 @@ new class extends Component
                  class="cbvh-backdrop-fade fixed inset-0 bg-[#2C211C]/50 backdrop-blur-xs z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
                 <div class="cbvh-sheet-up cbvh-safe-bottom-nav bg-white dark:bg-[#241C19] w-full max-w-md rounded-t-3xl sm:rounded-3xl px-5 pt-4 sm:pb-5 border border-[#E8DDD6] dark:border-[#3D2F29] shadow-2xl space-y-3 max-h-[88dvh] overflow-y-auto">
                     <div class="flex items-center justify-between border-b border-[#E8DDD6] dark:border-[#3D2F29] pb-2.5">
-                        <div>
-                            <span class="text-[10px] font-bold uppercase tracking-widest text-[#9E6B55]">{{ __('cbvh.customize_beverage') }}</span>
-                            <h3 class="font-bold text-base text-[#2C211C] dark:text-[#F5EDE7]">{{ \App\Support\CbvhLocale::drink($currentDrink->name) }}</h3>
+                        <div class="flex items-center space-x-2.5">
+                            <div class="w-8 h-8 rounded-xl bg-[#FAF6F3] dark:bg-[#3A2C26] border border-[#E8DDD6] dark:border-[#4A3830] flex items-center justify-center text-base overflow-hidden shrink-0">
+                                @if($currentDrink->display_image)
+                                    <img src="{{ $currentDrink->display_image }}" alt="{{ $currentDrink->name }}" class="w-full h-full object-cover" />
+                                @else
+                                    <span>{{ $currentDrink->display_icon }}</span>
+                                @endif
+                            </div>
+                            <div>
+                                <span class="text-[10px] font-bold uppercase tracking-widest text-[#9E6B55]">{{ __('cbvh.customize_beverage') }}</span>
+                                <h3 class="font-bold text-base text-[#2C211C] dark:text-[#F5EDE7]">{{ $currentDrink->display_name }}</h3>
+                            </div>
                         </div>
                         <button wire:click="$set('selectedDrinkId', null)" class="w-8 h-8 rounded-full bg-[#FAF6F3] dark:bg-[#3A2C26] text-[#7C6A60] hover:text-[#2C211C] flex items-center justify-center text-lg font-bold cursor-pointer">&times;</button>
                     </div>
