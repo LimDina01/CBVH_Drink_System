@@ -139,6 +139,7 @@ return [
     'banner_new' => 'NEW',
     'banner_making' => 'MAKING',
     'banner_delivery' => 'IN DELIVERY',
+    'banner_overdue' => 'LATE',
     'target_time' => 'Target',
     'meeting_time' => 'Meeting',
     'barista_asap_badge' => 'ASAP',

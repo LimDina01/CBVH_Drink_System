@@ -113,10 +113,20 @@ class DrinkOrder extends Model
     }
 
     /**
-     * Auto-complete orders that have been in 'in_delivery' for 10+ minutes.
+     * Auto-complete orders that have been in 'in_delivery' for 10+ minutes,
+     * and auto-expire quick orders left over from yesterday.
      */
     public static function autoCompleteExpiredDeliveries(bool $notifyTelegram = true): int
     {
+        // Auto-cancel stale quick orders from yesterday or earlier that were left unfulfilled
+        static::whereIn('order_type', ['instant', 'extend'])
+            ->whereIn('status', ['approved', 'preparing'])
+            ->whereDate('created_at', '<', today())
+            ->update([
+                'status' => 'rejected_by_barista',
+                'barista_rejection_reason' => 'Auto-expired: unfulfilled on order day',
+            ]);
+
         $expired = static::with('user')
             ->where('status', 'in_delivery')
             ->whereNotNull('in_delivery_at')

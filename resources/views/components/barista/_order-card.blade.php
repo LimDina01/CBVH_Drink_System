@@ -4,14 +4,22 @@
         && $order->delivery_time->isAfter(today()->endOfDay());
     $isAsapQuick = in_array($order->order_type, ['instant', 'extend']) && $order->estimated_wait_minutes !== null;
     $isLaterTodayQuick = $order->order_type === 'instant' && $order->estimated_wait_minutes === null;
+
+    $isOverdue = $order->delivery_time
+        && now()->greaterThan($order->delivery_time)
+        && in_array($order->status, ['approved', 'preparing']);
+    $minutesLate = $isOverdue ? max(1, (int) now()->diffInMinutes($order->delivery_time)) : 0;
+    $isOldOrder = !$order->created_at->isToday();
 @endphp
 <div wire:key="barista-order-{{ $order->id }}"
-     class="bg-white dark:bg-[#241C19] rounded-3xl border-4 {{ $order->status === 'in_delivery' ? 'border-blue-500 opacity-85' : ($isFutureMeeting ? 'border-[#D8C8BE] opacity-85' : ($order->status === 'preparing' ? 'border-[#9E6B55]' : 'border-amber-400')) }} shadow-md flex flex-col justify-between overflow-hidden transition-colors">
+     class="bg-white dark:bg-[#241C19] rounded-3xl border-4 {{ $isOverdue ? 'border-rose-500 ring-4 ring-rose-500/25 shadow-lg' : ($order->status === 'in_delivery' ? 'border-blue-500 opacity-85' : ($isFutureMeeting ? 'border-[#D8C8BE] opacity-85' : ($order->status === 'preparing' ? 'border-[#9E6B55]' : 'border-amber-400'))) }} shadow-md flex flex-col justify-between overflow-hidden transition-colors">
 
     <!-- Status Color Banner -->
-    <div class="px-5 py-3 flex items-center justify-between {{ $order->status === 'in_delivery' ? 'bg-blue-600 text-white' : ($order->status === 'preparing' ? 'bg-[#9E6B55] text-white' : 'bg-amber-400 text-[#2C211C]') }}">
+    <div class="px-5 py-3 flex items-center justify-between {{ $isOverdue ? 'bg-rose-600 text-white' : ($order->status === 'in_delivery' ? 'bg-blue-600 text-white' : ($order->status === 'preparing' ? 'bg-[#9E6B55] text-white' : 'bg-amber-400 text-[#2C211C]')) }}">
         <span class="text-base font-black tracking-wide uppercase">
-            @if($order->status === 'approved')
+            @if($isOverdue)
+                🚨 {{ __('cbvh.banner_overdue') }} (+{{ $minutesLate }}m)
+            @elseif($order->status === 'approved')
                 🔔 {{ __('cbvh.banner_new') }}
             @elseif($order->status === 'preparing')
                 👨‍🍳 {{ __('cbvh.banner_making') }}
@@ -20,6 +28,11 @@
             @endif
         </span>
         <div class="flex items-center space-x-2">
+            @if($isOldOrder)
+                <span class="px-2.5 py-0.5 rounded-full bg-black/40 text-amber-200 border border-amber-300/40 text-xs font-black">
+                    ⚠️ {{ $order->created_at->diffForHumans() }}
+                </span>
+            @endif
             @if($order->order_type === 'extend')
                 <span class="px-2.5 py-0.5 rounded-full bg-purple-600 text-white text-sm font-black">
                     🔄 {{ __('cbvh.extra_badge') }}
@@ -51,26 +64,35 @@
                 {{ \App\Support\CbvhLocale::floor($order->room?->floor) }}
             </div>
         </div>
-        <div class="text-right shrink-0 bg-[#FAF6F3] dark:bg-[#1A1412] px-3.5 py-2 rounded-xl border border-[#E8DDD6] space-y-0.5">
+        <div class="text-right shrink-0 bg-[#FAF6F3] dark:bg-[#1A1412] px-3.5 py-2 rounded-xl border {{ $isOverdue ? 'border-rose-300 dark:border-rose-800 bg-rose-50/70 dark:bg-rose-950/30' : 'border-[#E8DDD6]' }} space-y-0.5">
             @if($isAsapQuick)
-                <div class="text-sm font-black uppercase text-amber-700">
+                <div class="text-sm font-black uppercase {{ $isOverdue ? 'text-rose-600 dark:text-rose-400' : 'text-amber-700' }}">
                     ⚡ {{ __('cbvh.barista_asap_badge') }}
+                    @if($isOverdue)
+                        <span class="text-xs font-black text-rose-600 dark:text-rose-400">(+{{ $minutesLate }}m)</span>
+                    @endif
                 </div>
                 <div class="text-sm font-bold text-[#7C6A60]">
-                    {{ __('cbvh.ordered_at') }}: <span class="font-black text-[#835440] dark:text-[#E8CFC1]">{{ \App\Support\CbvhLocale::formatTime($order->created_at) }}</span>
+                    {{ __('cbvh.ordered_at') }}: <span class="font-black {{ $isOverdue ? 'text-rose-700 dark:text-rose-300' : 'text-[#835440] dark:text-[#E8CFC1]' }}">{{ $isOldOrder ? $order->created_at->format('M d, h:i A') : \App\Support\CbvhLocale::formatTime($order->created_at) }}</span>
                 </div>
             @elseif($isLaterTodayQuick)
-                <div class="text-xs font-black uppercase text-[#7C6A60]">
+                <div class="text-xs font-black uppercase {{ $isOverdue ? 'text-rose-600 dark:text-rose-400' : 'text-[#7C6A60]' }}">
                     🕒 {{ __('cbvh.quick_later_today') }}
+                    @if($isOverdue)
+                        <span class="text-xs font-black text-rose-600 dark:text-rose-400">(+{{ $minutesLate }}m)</span>
+                    @endif
                 </div>
-                <div class="text-base font-black text-[#835440] dark:text-[#E8CFC1]">
-                    {{ $order->delivery_time ? \App\Support\CbvhLocale::formatTime($order->delivery_time) : __('cbvh.now') }}
+                <div class="text-base font-black {{ $isOverdue ? 'text-rose-600 dark:text-rose-400' : 'text-[#835440] dark:text-[#E8CFC1]' }}">
+                    {{ $order->delivery_time ? ($isOldOrder ? $order->delivery_time->format('M d, h:i A') : \App\Support\CbvhLocale::formatTime($order->delivery_time)) : __('cbvh.now') }}
                 </div>
             @else
-                <div class="text-xs font-black uppercase text-[#7C6A60]">
+                <div class="text-xs font-black uppercase {{ $isOverdue ? 'text-rose-600 dark:text-rose-400' : 'text-[#7C6A60]' }}">
                     📅 {{ __('cbvh.meeting_time') }}
+                    @if($isOverdue)
+                        <span class="text-xs font-black text-rose-600 dark:text-rose-400">(+{{ $minutesLate }}m)</span>
+                    @endif
                 </div>
-                <div class="text-base font-black text-[#835440] dark:text-[#E8CFC1]">
+                <div class="text-base font-black {{ $isOverdue ? 'text-rose-600 dark:text-rose-400' : 'text-[#835440] dark:text-[#E8CFC1]' }}">
                     {{ $order->delivery_time ? \App\Support\CbvhLocale::formatDateTime($order->delivery_time) : __('cbvh.now') }}
                 </div>
             @endif

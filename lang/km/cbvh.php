@@ -139,6 +139,7 @@ return [
     'banner_new' => 'ថ្មី',
     'banner_making' => 'កំពុងធ្វើ',
     'banner_delivery' => 'កំពុងដឹកជញ្ជូន',
+    'banner_overdue' => 'យឺតពេល',
     'target_time' => 'ម៉ោងគោលដៅ',
     'meeting_time' => 'ម៉ោងប្រជុំ',
     'barista_asap_badge' => 'ឆាប់បំផុត',

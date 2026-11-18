@@ -452,6 +452,53 @@ class BookingSystemTest extends TestCase
         $this->assertEquals('completed', $parent->fresh()->status);
     }
 
+    public function test_kitchen_display_flags_overdue_orders_and_auto_expires_yesterdays_unfulfilled_orders(): void
+    {
+        Carbon::setTestNow(Carbon::create(2026, 11, 12, 10, 0, 0));
+
+        $hq = Branch::where('is_hq', true)->first();
+        $barista = User::where('role', 'barista')->first();
+        $employee = User::where('email', 'employee@company.com')->first();
+        $room = Room::where('branch_id', $hq->id)->first();
+        $drink = DrinkItem::where('branch_id', $hq->id)->first();
+
+        // An order scheduled for 10 minutes ago (overdue)
+        $overdueOrder = DrinkOrder::create([
+            'user_id' => $employee->id,
+            'branch_id' => $hq->id,
+            'room_id' => $room->id,
+            'order_type' => 'instant',
+            'delivery_time' => now()->subMinutes(10),
+            'estimated_wait_minutes' => 4,
+            'status' => 'approved',
+            'approved_at' => now()->subMinutes(14),
+        ]);
+        $overdueOrder->items()->create([
+            'drink_item_id' => $drink->id,
+            'quantity' => 1,
+            'selected_options' => [],
+        ]);
+
+        // A quick order left over from yesterday
+        $yesterdayOrder = DrinkOrder::create([
+            'user_id' => $employee->id,
+            'branch_id' => $hq->id,
+            'room_id' => $room->id,
+            'order_type' => 'instant',
+            'status' => 'approved',
+            'approved_at' => now()->subDay(),
+        ]);
+        $yesterdayOrder->forceFill(['created_at' => now()->subDay()])->save();
+
+        // Kitchen display sees the overdue badge
+        Livewire::actingAs($barista)
+            ->test('barista.kitchen-display')
+            ->assertSee(__('cbvh.banner_overdue'));
+
+        // Yesterday's stale order is auto-expired
+        $this->assertEquals('rejected_by_barista', $yesterdayOrder->fresh()->status);
+    }
+
     public function test_admin_can_create_staff_account_and_export_csv(): void
     {
         $hq = Branch::where('is_hq', true)->first();
