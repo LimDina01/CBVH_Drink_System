@@ -1700,10 +1700,14 @@ new class extends Component
 
     <!-- Create / Edit Drink Modal with Dynamic Layers Builder -->
     @if($showDrinkModal)
-        <div class="fixed inset-0 bg-[#2C211C]/60 backdrop-blur-xs z-50 flex items-center justify-center p-4 overflow-y-auto"
-             wire:keydown.escape="closeDrinkModal">
-            <div class="bg-white dark:bg-[#241C19] w-full max-w-2xl rounded-3xl p-6 border border-[#E8DDD6] dark:border-[#3D2F29] shadow-2xl space-y-5 my-6 max-h-[90vh] overflow-y-auto">
-                <div class="flex items-center justify-between border-b border-[#E8DDD6] dark:border-[#3D2F29] pb-3">
+        <div class="fixed inset-0 bg-[#2C211C]/60 backdrop-blur-xs z-50 flex items-center justify-center p-3 sm:p-4 overscroll-none"
+             wire:keydown.escape="closeDrinkModal"
+             x-data
+             x-init="document.body.classList.add('overflow-hidden'); $cleanup(() => document.body.classList.remove('overflow-hidden'))"
+             @click.self="$wire.closeDrinkModal()">
+            <div class="bg-white dark:bg-[#241C19] w-full max-w-2xl rounded-3xl border border-[#E8DDD6] dark:border-[#3D2F29] shadow-2xl flex flex-col max-h-[90vh] overflow-hidden overscroll-contain">
+                <!-- Modal Fixed Header -->
+                <div class="flex items-center justify-between border-b border-[#E8DDD6] dark:border-[#3D2F29] px-6 py-4.5 shrink-0 bg-white dark:bg-[#241C19] rounded-t-3xl">
                     <div class="flex items-center space-x-3">
                         <div class="w-10 h-10 rounded-2xl bg-[#F5EDE7] dark:bg-[#3D2F29] text-[#835440] dark:text-[#E8CFC1] flex items-center justify-center text-xl shrink-0 overflow-hidden">
                             @if($drinkImage)
@@ -1723,11 +1727,13 @@ new class extends Component
                             </p>
                         </div>
                     </div>
-                    <button type="button" wire:click="closeDrinkModal" class="w-8 h-8 rounded-full bg-[#FAF6F3] dark:bg-[#3A2C26] text-[#7C6A60] hover:text-[#2C211C] flex items-center justify-center text-lg font-bold cursor-pointer">&times;</button>
+                    <button type="button" wire:click="closeDrinkModal" class="w-8 h-8 rounded-full bg-[#FAF6F3] dark:bg-[#3A2C26] text-[#7C6A60] hover:text-[#2C211C] flex items-center justify-center text-lg font-bold cursor-pointer transition">&times;</button>
                 </div>
 
-                <form wire:submit="saveDrink" class="space-y-4">
-                    <!-- Drink Icon & Image Selector -->
+                <form wire:submit="saveDrink" class="flex flex-col flex-1 min-h-0 overflow-hidden">
+                    <!-- Modal Scrollable Body (Only scroll area) -->
+                    <div class="px-6 py-4 space-y-4 overflow-y-auto overscroll-contain flex-1">
+                        <!-- Drink Icon & Image Selector -->
                     <div class="p-3.5 rounded-2xl bg-[#FAF6F3] dark:bg-[#1E1715] border border-[#E8DDD6] dark:border-[#3D2F29] space-y-3">
                         <div class="flex items-center justify-between">
                             <label class="block text-xs font-bold uppercase tracking-wider text-[#9E6B55]">
@@ -1961,15 +1967,18 @@ new class extends Component
                         </div>
                     </div>
 
-                    <!-- Modal Actions -->
-                    <div class="grid grid-cols-2 gap-3 pt-3 border-t border-[#E8DDD6] dark:border-[#3D2F29]">
+                    </div>
+
+                    <!-- Modal Fixed Footer (Always visible without scrolling) -->
+                    <div class="grid grid-cols-2 gap-3 px-6 py-4 border-t border-[#E8DDD6] dark:border-[#3D2F29] shrink-0 bg-[#FAF6F3]/60 dark:bg-[#1E1715]/60 rounded-b-3xl">
                         <button type="button" wire:click="closeDrinkModal"
-                                class="py-2.5 px-4 rounded-xl bg-[#FAF6F3] dark:bg-[#1A1412] border border-[#E8DDD6] dark:border-[#3D2F29] text-[#2C211C] dark:text-[#F5EDE7] font-bold text-xs cursor-pointer hover:bg-[#F5EDE7] transition">
+                                class="py-2.5 px-4 rounded-xl bg-white dark:bg-[#241C19] border border-[#E8DDD6] dark:border-[#3D2F29] text-[#2C211C] dark:text-[#F5EDE7] font-bold text-xs cursor-pointer hover:bg-[#F5EDE7] dark:hover:bg-[#3A2C26] transition">
                             Cancel
                         </button>
                         <button type="submit"
-                                class="py-2.5 px-4 rounded-xl bg-[#9E6B55] hover:bg-[#835440] text-white font-bold text-xs shadow-md cursor-pointer transition">
-                            💾 Save Drink
+                                class="py-2.5 px-4 rounded-xl bg-[#9E6B55] hover:bg-[#835440] text-white font-bold text-xs shadow-md cursor-pointer transition flex items-center justify-center space-x-1.5">
+                            <span>💾</span>
+                            <span>Save Drink</span>
                         </button>
                     </div>
                 </form>
@@ -1979,9 +1988,12 @@ new class extends Component
 
     <!-- Reset Password Modal -->
     @if($showResetPasswordModal)
-        <div class="fixed inset-0 bg-[#2C211C]/60 backdrop-blur-xs z-50 flex items-center justify-center p-4"
-             wire:keydown.escape="closeResetPasswordModal">
-            <div class="bg-white dark:bg-[#241C19] w-full max-w-sm rounded-3xl p-6 border border-[#E8DDD6] dark:border-[#3D2F29] shadow-2xl space-y-4">
+        <div class="fixed inset-0 bg-[#2C211C]/60 backdrop-blur-xs z-50 flex items-center justify-center p-4 overscroll-none"
+             wire:keydown.escape="closeResetPasswordModal"
+             x-data
+             x-init="document.body.classList.add('overflow-hidden'); $cleanup(() => document.body.classList.remove('overflow-hidden'))"
+             @click.self="$wire.closeResetPasswordModal()">
+            <div class="bg-white dark:bg-[#241C19] w-full max-w-sm rounded-3xl p-6 border border-[#E8DDD6] dark:border-[#3D2F29] shadow-2xl space-y-4 overscroll-contain">
                 <div class="flex items-center space-x-3">
                     <div class="w-10 h-10 rounded-2xl bg-amber-100 dark:bg-amber-950/50 text-amber-600 flex items-center justify-center text-xl shrink-0">
                         🔑
