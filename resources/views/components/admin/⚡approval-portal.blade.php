@@ -1529,9 +1529,19 @@ new class extends Component
                                                 🏢 {{ $drink->branch->code }}{{ $drink->branch->is_hq ? ' (HQ)' : '' }}
                                             </span>
                                         @elseif(!empty($drink->branch_items))
-                                            <span class="px-2 py-0.5 rounded-lg text-[10px] font-bold uppercase tracking-wider bg-purple-50 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300 border border-purple-200 dark:border-purple-800 whitespace-nowrap shrink-0">
-                                                🏢 All Branches
-                                            </span>
+                                            @php
+                                                $bCount = count($drink->branch_items);
+                                                $totalBCount = count($branches);
+                                            @endphp
+                                            @if($bCount >= $totalBCount)
+                                                <span class="px-2 py-0.5 rounded-lg text-[10px] font-bold uppercase tracking-wider bg-purple-50 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300 border border-purple-200 dark:border-purple-800 whitespace-nowrap shrink-0">
+                                                    🏢 All Branches
+                                                </span>
+                                            @else
+                                                <span class="px-2 py-0.5 rounded-lg text-[10px] font-bold uppercase tracking-wider bg-amber-50 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-200 dark:border-amber-800 whitespace-nowrap shrink-0">
+                                                    🏢 {{ collect($drink->branch_items)->pluck('branch_code')->implode(', ') }} Only
+                                                </span>
+                                            @endif
                                         @endif
                                         <span class="px-2 py-0.5 rounded-lg text-[10px] font-bold uppercase tracking-wider bg-[#F5EDE7] dark:bg-[#3D2F29] text-[#835440] dark:text-[#E8CFC1] whitespace-nowrap shrink-0">
                                             {{ $drink->category ?: 'drink' }}
