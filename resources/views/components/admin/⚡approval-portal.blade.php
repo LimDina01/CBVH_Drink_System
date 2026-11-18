@@ -3,6 +3,7 @@
 use Livewire\Component;
 use Livewire\WithPagination;
 use Livewire\WithFileUploads;
+use Livewire\Attributes\Url;
 use App\Models\Branch;
 use App\Models\DrinkItem;
 use App\Models\DrinkOrder;
@@ -18,6 +19,7 @@ new class extends Component
     use WithPagination;
     use WithFileUploads;
 
+    #[Url(as: 'tab')]
     public $activeSection = 'reports'; // 'reports', 'team', 'drinks'
 
     // --- Drink Management ---
@@ -78,6 +80,9 @@ new class extends Component
 
     public function mount()
     {
+        if (!in_array($this->activeSection, ['reports', 'team', 'drinks'], true)) {
+            $this->activeSection = 'reports';
+        }
         $this->setPeriod('this_month');
         $this->enforceWorkingHours = (bool) Cache::get('enforce_working_hours', true);
         $this->newBranchId = Branch::first()?->id;

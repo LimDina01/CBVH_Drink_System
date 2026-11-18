@@ -2,6 +2,7 @@
 
 use Livewire\Component;
 use Livewire\WithFileUploads;
+use Livewire\Attributes\Url;
 use App\Models\Branch;
 use App\Models\Room;
 use App\Models\DrinkItem;
@@ -17,6 +18,7 @@ new class extends Component
 {
     use WithFileUploads;
 
+    #[Url(as: 'tab')]
     public $activeTab = 'drinks'; // 'drinks', 'history'
     public $selectedBranchId;
     public $currentUserId;
@@ -53,6 +55,10 @@ new class extends Component
 
     public function mount()
     {
+        if (!in_array($this->activeTab, ['drinks', 'history'], true)) {
+            $this->activeTab = 'drinks';
+        }
+
         $user = Auth::user();
         if ($user) {
             $this->currentUserId = $user->id;
