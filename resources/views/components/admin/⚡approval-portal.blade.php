@@ -1431,6 +1431,11 @@ new class extends Component
                                     </div>
 
                                     <div class="flex items-center space-x-1 shrink-0">
+                                        @if($drink->branch)
+                                            <span class="px-2 py-0.5 rounded-lg text-[10px] font-bold uppercase tracking-wider bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
+                                                🏢 {{ $drink->branch->code }}{{ $drink->branch->is_hq ? ' (HQ)' : '' }}
+                                            </span>
+                                        @endif
                                         <span class="px-2 py-0.5 rounded-lg text-[10px] font-bold uppercase tracking-wider bg-[#F5EDE7] dark:bg-[#3D2F29] text-[#835440] dark:text-[#E8CFC1]">
                                             {{ $drink->category ?: 'drink' }}
                                         </span>
