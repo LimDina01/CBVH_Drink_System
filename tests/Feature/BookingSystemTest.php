@@ -378,6 +378,8 @@ class BookingSystemTest extends TestCase
             'status' => 'approved',
         ]);
 
+        $this->assertEquals('completed', $parent->fresh()->status);
+
         // Completed orders no longer show or allow Order More / Spilled
         $completed = DrinkOrder::create([
             'user_id' => $employee->id,
@@ -394,6 +396,60 @@ class BookingSystemTest extends TestCase
             ->assertDontSee(__('cbvh.btn_extend_completed'))
             ->call('startExtendOrder', $completed->id)
             ->assertSet('extendingOrderId', null);
+    }
+
+    public function test_spill_replacement_cannot_exceed_parent_order_cup_count(): void
+    {
+        Carbon::setTestNow(Carbon::create(2026, 11, 12, 10, 0, 0));
+
+        $hq = Branch::where('is_hq', true)->first();
+        $employee = User::where('email', 'employee@company.com')->first();
+        $room = Room::where('branch_id', $hq->id)->first();
+        $drink = DrinkItem::where('branch_id', $hq->id)->first();
+
+        // Single cup order in delivery
+        $parent = DrinkOrder::create([
+            'user_id' => $employee->id,
+            'branch_id' => $hq->id,
+            'room_id' => $room->id,
+            'order_type' => 'instant',
+            'people_count' => 1,
+            'status' => 'in_delivery',
+            'in_delivery_at' => now(),
+        ]);
+        \App\Models\DrinkOrderItem::create([
+            'drink_order_id' => $parent->id,
+            'drink_item_id' => $drink->id,
+            'quantity' => 1,
+            'selected_options' => [],
+        ]);
+
+        // Trying to reorder 2 cups for spilled reason on a 1-cup order must be blocked!
+        Livewire::actingAs($employee)
+            ->test('mini-app.booking-app')
+            ->call('startExtendOrder', $parent->id)
+            ->set('extendReason', 'spilled')
+            ->call('selectDrink', $drink->id)
+            ->set('drinkQuantity', 2)
+            ->call('addToCart')
+            ->assertSet('flashType', 'error');
+
+        // Parent remains in_delivery because reorder was blocked
+        $this->assertEquals('in_delivery', $parent->fresh()->status);
+
+        // Reordering 1 cup succeeds and auto-completes the parent order!
+        Livewire::actingAs($employee)
+            ->test('mini-app.booking-app')
+            ->call('startExtendOrder', $parent->id)
+            ->set('extendReason', 'spilled')
+            ->call('selectDrink', $drink->id)
+            ->set('drinkQuantity', 1)
+            ->call('addToCart')
+            ->assertSet('flashType', 'success')
+            ->call('submitDrinkOrder')
+            ->assertSet('flashType', 'success');
+
+        $this->assertEquals('completed', $parent->fresh()->status);
     }
 
     public function test_admin_can_create_staff_account_and_export_csv(): void

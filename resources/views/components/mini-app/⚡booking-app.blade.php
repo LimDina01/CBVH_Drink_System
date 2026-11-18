@@ -27,6 +27,7 @@ new class extends Component
     public $orderType = 'instant'; // 'instant', 'meeting'
     public $extendingOrderId = null;
     public $extendReason = 'spilled'; // 'spilled', 'extra_guests', 'additional'
+    public int $parentMaxCups = 1;
 
     // --- Drink Selection & Cart ---
     public $selectedDrinkId = null;
@@ -232,9 +233,44 @@ new class extends Component
         if (!$drink || !$drink->is_available) return;
 
         $qty = max(1, (int) $this->drinkQuantity);
-        if ($this->orderType === 'instant' && !$this->extendingOrderId) {
+        $trayCups = (int) collect($this->drinkCart)->sum('quantity');
+
+        if ($this->extendingOrderId) {
+            $parent = DrinkOrder::with('items')->find($this->extendingOrderId);
+            $parentMaxCups = $parent ? max(1, max((int) $parent->total_cups, (int) $parent->people_count)) : 1;
+            $this->parentMaxCups = $parentMaxCups;
+
+            if ($this->extendReason === 'spilled') {
+                if (($trayCups + $qty) > $parentMaxCups) {
+                    $this->selectedDrinkId = null;
+                    $this->flashMessage = __('cbvh.spill_replacement_limit', [
+                        'limit' => $parentMaxCups,
+                        'order' => $this->extendingOrderId,
+                    ]);
+                    $this->flashType = 'error';
+                    return;
+                }
+            } else {
+                // For extra guests or additional drinks on quick orders, enforce daily limit
+                $isParentMeeting = ($parent && $parent->order_type === 'meeting');
+                if (!$isParentMeeting) {
+                    $usedToday = DrinkOrder::quickCupsUsedToday($this->currentUserId);
+                    $limit = DrinkOrder::quickDailyLimitForUser(Auth::user());
+
+                    if (($usedToday + $trayCups + $qty) > $limit) {
+                        $remaining = max(0, $limit - $usedToday - $trayCups);
+                        $this->selectedDrinkId = null;
+                        $this->flashMessage = __('cbvh.quick_daily_limit_exceeded', [
+                            'limit' => $limit,
+                            'remaining' => $remaining,
+                        ]);
+                        $this->flashType = 'error';
+                        return;
+                    }
+                }
+            }
+        } elseif ($this->orderType === 'instant') {
             $usedToday = DrinkOrder::quickCupsUsedToday($this->currentUserId);
-            $trayCups = (int) collect($this->drinkCart)->sum('quantity');
             $limit = DrinkOrder::quickDailyLimitForUser(Auth::user());
 
             if (($usedToday + $trayCups + $qty) > $limit) {
@@ -303,10 +339,12 @@ new class extends Component
         $parent = DrinkOrder::where('id', $orderId)
             ->where('user_id', $this->currentUserId)
             ->where('status', 'in_delivery')
+            ->with('items')
             ->first();
         if (!$parent) return;
 
         $this->extendingOrderId = $parent->id;
+        $this->parentMaxCups = max(1, max((int) $parent->total_cups, (int) $parent->people_count));
         $this->selectedBranchId = $parent->branch_id;
         $this->selectedRoomId = $parent->room_id;
         $this->extendReason = 'spilled';
@@ -321,6 +359,7 @@ new class extends Component
     public function cancelExtend(): void
     {
         $this->extendingOrderId = null;
+        $this->parentMaxCups = 1;
         $this->drinkCart = [];
         $this->attachment = null;
         $this->applyUserBranchConstraints();
@@ -363,7 +402,43 @@ new class extends Component
         $isExtend = !empty($this->extendingOrderId);
         $finalOrderType = $isExtend ? 'extend' : $this->orderType;
 
-        if ($finalOrderType === 'instant') {
+        if ($isExtend) {
+            $parent = DrinkOrder::with('items')->find($this->extendingOrderId);
+            if (!$parent || $parent->status !== 'in_delivery') {
+                $this->flashMessage = 'Original order is no longer in delivery.';
+                $this->flashType = 'error';
+                $this->cancelExtend();
+                return;
+            }
+
+            $parentMaxCups = max(1, max((int) $parent->total_cups, (int) $parent->people_count));
+            if ($this->extendReason === 'spilled') {
+                if ($totalCups > $parentMaxCups) {
+                    $this->flashMessage = __('cbvh.spill_replacement_limit', [
+                        'limit' => $parentMaxCups,
+                        'order' => $parent->id,
+                    ]);
+                    $this->flashType = 'error';
+                    return;
+                }
+            } else {
+                if ($parent->order_type !== 'meeting') {
+                    $usedToday = DrinkOrder::quickCupsUsedToday($this->currentUserId);
+                    $limit = DrinkOrder::quickDailyLimitForUser(Auth::user());
+                    if (($usedToday + $totalCups) > $limit) {
+                        $this->flashMessage = __('cbvh.quick_daily_limit_exceeded', [
+                            'limit' => $limit,
+                            'remaining' => max(0, $limit - $usedToday),
+                        ]);
+                        $this->flashType = 'error';
+                        return;
+                    }
+                }
+            }
+
+            $waitMinutes = max(2, $totalCups * 2);
+            $deliveryTime = Carbon::now()->addMinutes($waitMinutes);
+        } elseif ($finalOrderType === 'instant') {
             if (!$this->isCurrentUserHq()) {
                 $this->flashMessage = __('cbvh.branch_meeting_only');
                 $this->flashType = 'error';
@@ -478,12 +553,25 @@ new class extends Component
             ]);
         }
 
+        // Auto-complete and close the parent order so it leaves in_delivery
+        if ($isExtend && $this->extendingOrderId) {
+            $parent = DrinkOrder::find($this->extendingOrderId);
+            if ($parent && $parent->status === 'in_delivery') {
+                $parent->update([
+                    'status' => 'completed',
+                    'completed_at' => now(),
+                    'auto_completed' => false,
+                ]);
+            }
+        }
+
         app(TelegramService::class)->notifyBaristaForDrinkOrder($order);
 
         $this->drinkCart = [];
         $this->drinkNotes = '';
         $this->attachment = null;
         $this->extendingOrderId = null;
+        $this->parentMaxCups = 1;
 
         $this->flashMessage = "#{$order->id} — " . __('cbvh.status_approved');
         $this->flashType = 'success';
@@ -676,6 +764,13 @@ new class extends Component
                                 @endforeach
                             </div>
                         </div>
+
+                        @if($extendReason === 'spilled')
+                            <div class="text-[11px] font-semibold text-[#835440] dark:text-[#E8CFC1] bg-white/80 dark:bg-[#241C19]/80 px-3 py-2 rounded-xl border border-[#E8DDD6] dark:border-[#3D2F29] flex items-center justify-between">
+                                <span>💧 {{ __('cbvh.spill_replacement_note') }}:</span>
+                                <span class="font-bold">Max {{ $parentMaxCups }} {{ $parentMaxCups > 1 ? 'cups' : 'cup' }} (Order #{{ $extendingOrderId }})</span>
+                            </div>
+                        @endif
                     </div>
                 @else
                     <div class="bg-white dark:bg-[#241C19] p-3 rounded-2xl border border-[#E8DDD6] dark:border-[#3D2F29] shadow-[0_2px_12px_rgba(158,107,85,0.05)] space-y-2.5 overflow-hidden">

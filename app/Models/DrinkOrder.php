@@ -103,6 +103,15 @@ class DrinkOrder extends Model
         return $this->hasMany(DrinkOrderItem::class);
     }
 
+    public function getTotalCupsAttribute(): int
+    {
+        if ($this->relationLoaded('items')) {
+            return (int) $this->items->sum('quantity');
+        }
+
+        return (int) $this->items()->sum('quantity');
+    }
+
     /**
      * Auto-complete orders that have been in 'in_delivery' for 10+ minutes.
      */

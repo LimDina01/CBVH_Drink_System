@@ -266,6 +266,8 @@ return [
     'drink_updated_success' => 'Drink updated successfully!',
     'drink_deleted_success' => 'Drink deleted successfully!',
     'drink_stock_updated' => 'Drink availability updated.',
+    'spill_replacement_limit' => 'Spill replacement limit: You can only reorder up to :limit cup(s) (the amount in original order #:order).',
+    'spill_replacement_note' => 'Spill Replacement Limit',
     'working_hours_rule' => 'Working Hours Rule (8 AM – 5 PM)',
     'working_hours_desc' => 'Quick Drinks are restricted to 8:00 AM – 5:00 PM. Switch off temporarily for after-hours testing.',
     'enforced_hours' => 'Enforced (8 AM – 5 PM)',
