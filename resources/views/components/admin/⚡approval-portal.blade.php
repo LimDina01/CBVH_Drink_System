@@ -1501,17 +1501,17 @@ new class extends Component
                              class="bg-white dark:bg-[#241C19] rounded-2xl border border-[#E8DDD6] dark:border-[#3D2F29] p-5 shadow-2xs hover:shadow-md transition flex flex-col justify-between space-y-4 {{ !$drink->is_available ? 'opacity-70 bg-[#FAF6F3]/50' : '' }}">
                             <div class="space-y-2.5">
                                 <div class="flex items-start justify-between gap-2">
-                                    <div class="space-y-0.5">
-                                        <div class="flex items-center space-x-2">
+                                    <div class="space-y-0.5 min-w-0 flex-1">
+                                        <div class="flex flex-wrap items-center gap-1.5">
                                             <h3 class="font-bold text-sm text-[#2C211C] dark:text-[#F5EDE7] leading-snug">
                                                 {{ $drink->name }}
                                             </h3>
                                             @if($drink->is_available)
-                                                <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300">
+                                                <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 whitespace-nowrap shrink-0">
                                                     {{ __('cbvh.in_stock') }}
                                                 </span>
                                             @else
-                                                <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300">
+                                                <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300 whitespace-nowrap shrink-0">
                                                     {{ __('cbvh.out_of_stock') }}
                                                 </span>
                                             @endif
@@ -1525,15 +1525,15 @@ new class extends Component
 
                                     <div class="flex items-center space-x-1 shrink-0">
                                         @if(!empty($drink->branch))
-                                            <span class="px-2 py-0.5 rounded-lg text-[10px] font-bold uppercase tracking-wider bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
+                                            <span class="px-2 py-0.5 rounded-lg text-[10px] font-bold uppercase tracking-wider bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200 dark:border-blue-800 whitespace-nowrap shrink-0">
                                                 🏢 {{ $drink->branch->code }}{{ $drink->branch->is_hq ? ' (HQ)' : '' }}
                                             </span>
                                         @elseif(!empty($drink->branch_items))
-                                            <span class="px-2 py-0.5 rounded-lg text-[10px] font-bold uppercase tracking-wider bg-purple-50 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
+                                            <span class="px-2 py-0.5 rounded-lg text-[10px] font-bold uppercase tracking-wider bg-purple-50 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300 border border-purple-200 dark:border-purple-800 whitespace-nowrap shrink-0">
                                                 🏢 All Branches
                                             </span>
                                         @endif
-                                        <span class="px-2 py-0.5 rounded-lg text-[10px] font-bold uppercase tracking-wider bg-[#F5EDE7] dark:bg-[#3D2F29] text-[#835440] dark:text-[#E8CFC1]">
+                                        <span class="px-2 py-0.5 rounded-lg text-[10px] font-bold uppercase tracking-wider bg-[#F5EDE7] dark:bg-[#3D2F29] text-[#835440] dark:text-[#E8CFC1] whitespace-nowrap shrink-0">
                                             {{ $drink->category ?: 'drink' }}
                                         </span>
                                     </div>
@@ -1565,7 +1565,7 @@ new class extends Component
                                     <div class="flex flex-wrap items-center gap-1.5">
                                         @foreach($drink->branch_items as $bItem)
                                             <button type="button" wire:click="toggleDrinkAvailability({{ $bItem->id }})"
-                                                    class="px-2.5 py-1.5 rounded-xl text-[11px] font-bold border transition cursor-pointer {{ $bItem->is_available ? 'bg-emerald-50 border-emerald-300 text-emerald-800 hover:bg-emerald-100' : 'bg-rose-50 border-rose-300 text-rose-800 hover:bg-rose-100' }}"
+                                                    class="px-2.5 py-1.5 rounded-xl text-[11px] font-bold border transition cursor-pointer whitespace-nowrap shrink-0 {{ $bItem->is_available ? 'bg-emerald-50 border-emerald-300 text-emerald-800 hover:bg-emerald-100' : 'bg-rose-50 border-rose-300 text-rose-800 hover:bg-rose-100' }}"
                                                     title="{{ $bItem->branch_name }}">
                                                 {{ $bItem->branch_code }}: {{ $bItem->is_available ? '🟢 ' . __('cbvh.in_stock') : '🔴 ' . __('cbvh.out_of_stock') }}
                                             </button>
@@ -1574,7 +1574,7 @@ new class extends Component
                                 @else
                                     <!-- Single branch toggle -->
                                     <button type="button" wire:click="toggleDrinkAvailability({{ $drink->id }})"
-                                            class="px-2.5 py-1.5 rounded-xl text-[11px] font-bold border transition cursor-pointer {{ $drink->is_available ? 'bg-emerald-50 border-emerald-300 text-emerald-800 hover:bg-emerald-100' : 'bg-rose-50 border-rose-300 text-rose-800 hover:bg-rose-100' }}"
+                                            class="px-2.5 py-1.5 rounded-xl text-[11px] font-bold border transition cursor-pointer whitespace-nowrap shrink-0 {{ $drink->is_available ? 'bg-emerald-50 border-emerald-300 text-emerald-800 hover:bg-emerald-100' : 'bg-rose-50 border-rose-300 text-rose-800 hover:bg-rose-100' }}"
                                             title="{{ __('cbvh.toggle_stock') }}">
                                         {{ $drink->is_available ? '🟢 ' . __('cbvh.in_stock') : '🔴 ' . __('cbvh.out_of_stock') }}
                                     </button>
