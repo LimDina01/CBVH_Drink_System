@@ -1703,9 +1703,12 @@ new class extends Component
         <div class="fixed inset-0 bg-[#2C211C]/60 backdrop-blur-xs z-50 flex items-center justify-center p-3 sm:p-4 overscroll-none"
              wire:keydown.escape="closeDrinkModal"
              x-data
-             x-init="document.body.classList.add('overflow-hidden'); $cleanup(() => document.body.classList.remove('overflow-hidden'))"
+             @wheel.prevent
+             @touchmove.self.prevent
              @click.self="$wire.closeDrinkModal()">
-            <div class="bg-white dark:bg-[#241C19] w-full max-w-2xl rounded-3xl border border-[#E8DDD6] dark:border-[#3D2F29] shadow-2xl flex flex-col max-h-[90vh] overflow-hidden overscroll-contain">
+            <div class="bg-white dark:bg-[#241C19] w-full max-w-2xl rounded-3xl border border-[#E8DDD6] dark:border-[#3D2F29] shadow-2xl flex flex-col max-h-[90vh] overflow-hidden overscroll-contain"
+                 @wheel.stop
+                 @touchmove.stop>
                 <!-- Modal Fixed Header -->
                 <div class="flex items-center justify-between border-b border-[#E8DDD6] dark:border-[#3D2F29] px-6 py-4.5 shrink-0 bg-white dark:bg-[#241C19] rounded-t-3xl">
                     <div class="flex items-center space-x-3">
@@ -1991,9 +1994,12 @@ new class extends Component
         <div class="fixed inset-0 bg-[#2C211C]/60 backdrop-blur-xs z-50 flex items-center justify-center p-4 overscroll-none"
              wire:keydown.escape="closeResetPasswordModal"
              x-data
-             x-init="document.body.classList.add('overflow-hidden'); $cleanup(() => document.body.classList.remove('overflow-hidden'))"
+             @wheel.prevent
+             @touchmove.self.prevent
              @click.self="$wire.closeResetPasswordModal()">
-            <div class="bg-white dark:bg-[#241C19] w-full max-w-sm rounded-3xl p-6 border border-[#E8DDD6] dark:border-[#3D2F29] shadow-2xl space-y-4 overscroll-contain">
+            <div class="bg-white dark:bg-[#241C19] w-full max-w-sm rounded-3xl p-6 border border-[#E8DDD6] dark:border-[#3D2F29] shadow-2xl space-y-4 overscroll-contain"
+                 @wheel.stop
+                 @touchmove.stop>
                 <div class="flex items-center space-x-3">
                     <div class="w-10 h-10 rounded-2xl bg-amber-100 dark:bg-amber-950/50 text-amber-600 flex items-center justify-center text-xl shrink-0">
                         🔑
