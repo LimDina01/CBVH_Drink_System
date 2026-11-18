@@ -508,8 +508,9 @@ new class extends Component
         if ($this->editingDrinkId) {
             $drink = DrinkItem::findOrFail($this->editingDrinkId);
             $oldName = $drink->name;
+            $targetBranchIds = array_map('intval', (array) $this->drinkTargetBranches);
 
-            foreach ($this->drinkTargetBranches as $branchId) {
+            foreach ($targetBranchIds as $branchId) {
                 $existing = DrinkItem::where('branch_id', $branchId)
                     ->where(function ($q) use ($drink, $oldName) {
                         $q->where('id', $drink->id)->orWhere('name', $oldName);
@@ -538,9 +539,16 @@ new class extends Component
                     ]);
                 }
             }
+
+            // Remove from branches that were unchecked/unselected
+            DrinkItem::where(function ($q) use ($drink, $oldName) {
+                $q->where('id', $drink->id)->orWhere('name', $oldName);
+            })->whereNotIn('branch_id', $targetBranchIds)->delete();
+
             $this->flashMessage = __('cbvh.drink_updated_success') . " ({$name})";
         } else {
-            foreach ($this->drinkTargetBranches as $branchId) {
+            $targetBranchIds = array_map('intval', (array) $this->drinkTargetBranches);
+            foreach ($targetBranchIds as $branchId) {
                 DrinkItem::updateOrCreate(
                     ['branch_id' => $branchId, 'name' => $name],
                     [

@@ -1275,6 +1275,32 @@ class BookingSystemTest extends TestCase
         $this->assertEquals('របៀបក្រឡុក', $created->normalized_layers[0]['name_km']);
     }
 
+    public function test_admin_unchecking_branch_removes_drink_from_that_branch(): void
+    {
+        $admin = User::where('role', 'admin')->first();
+        $hq = Branch::where('code', 'HQ')->first();
+        $btk = Branch::where('code', 'BTK')->first();
+
+        // Initially exists at both branches
+        $this->assertDatabaseHas('drink_items', ['name' => 'Ice Milk Coffee', 'branch_id' => $hq->id]);
+        $this->assertDatabaseHas('drink_items', ['name' => 'Ice Milk Coffee', 'branch_id' => $btk->id]);
+
+        $drinkHq = DrinkItem::where('name', 'Ice Milk Coffee')->where('branch_id', $hq->id)->first();
+
+        // Admin edits and unchecks BTK (target branches: [HQ only])
+        Livewire::actingAs($admin)
+            ->test('admin.approval-portal')
+            ->call('openEditDrinkModal', $drinkHq->id)
+            ->set('drinkTargetBranches', [$hq->id])
+            ->call('saveDrink')
+            ->assertSet('showDrinkModal', false);
+
+        // Still exists at HQ
+        $this->assertDatabaseHas('drink_items', ['name' => 'Ice Milk Coffee', 'branch_id' => $hq->id]);
+        // REMOVED from BTK
+        $this->assertDatabaseMissing('drink_items', ['name' => 'Ice Milk Coffee', 'branch_id' => $btk->id]);
+    }
+
     public function test_admin_can_toggle_drink_availability_and_staff_cannot_order_out_of_stock_item(): void
     {
         $admin = User::where('role', 'admin')->first();
