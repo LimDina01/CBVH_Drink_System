@@ -100,16 +100,24 @@
                     <div class="flex flex-wrap gap-1.5 pl-12">
                         @foreach($it->selected_options as $optKey => $optVal)
                             @php
-                                $label = match($optKey) {
-                                    'sugar' => '🍯 ' . __('cbvh.opt_sugar'),
-                                    'coffee' => '☕ ' . __('cbvh.opt_coffee'),
-                                    'ice' => '🧊 ' . __('cbvh.opt_ice'),
-                                    'milk' => '🥛 ' . __('cbvh.opt_milk'),
-                                    default => ucfirst($optKey),
-                                };
+                                $isArr = is_array($optVal);
+                                $isKm = app()->getLocale() === 'km';
+                                if ($isArr) {
+                                    $label = $isKm ? ($optVal['layer_km'] ?? $optVal['layer_en'] ?? ucfirst($optKey)) : ($optVal['layer_en'] ?? $optVal['layer_km'] ?? ucfirst($optKey));
+                                    $value = $isKm ? ($optVal['km'] ?? $optVal['en'] ?? '') : ($optVal['en'] ?? $optVal['km'] ?? '');
+                                } else {
+                                    $label = match($optKey) {
+                                        'sugar' => '🍯 ' . __('cbvh.opt_sugar'),
+                                        'coffee' => '☕ ' . __('cbvh.opt_coffee'),
+                                        'ice' => '🧊 ' . __('cbvh.opt_ice'),
+                                        'milk' => '🥛 ' . __('cbvh.opt_milk'),
+                                        default => ucfirst($optKey),
+                                    };
+                                    $value = \App\Support\CbvhLocale::option($optVal);
+                                }
                             @endphp
                             <span class="px-3 py-1 rounded-xl text-sm font-bold bg-white dark:bg-[#241C19] text-[#2C211C] dark:text-[#F5EDE7] border border-[#E8DDD6] dark:border-[#4A3830] shadow-2xs">
-                                {{ $label }}: <span class="text-[#9E6B55] dark:text-[#E8CFC1]">{{ \App\Support\CbvhLocale::option($optVal) }}</span>
+                                {{ $label }}: <span class="text-[#9E6B55] dark:text-[#E8CFC1]">{{ $value }}</span>
                             </span>
                         @endforeach
                     </div>

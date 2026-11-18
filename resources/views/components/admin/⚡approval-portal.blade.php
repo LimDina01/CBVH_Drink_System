@@ -3,6 +3,7 @@
 use Livewire\Component;
 use Livewire\WithPagination;
 use App\Models\Branch;
+use App\Models\DrinkItem;
 use App\Models\DrinkOrder;
 use App\Models\User;
 use App\Services\TelegramService;
@@ -14,7 +15,23 @@ new class extends Component
 {
     use WithPagination;
 
-    public $activeSection = 'reports'; // 'reports', 'team'
+    public $activeSection = 'reports'; // 'reports', 'team', 'drinks'
+
+    // --- Drink Management ---
+    public string $drinkSearch = '';
+    public string $drinkBranchFilter = 'all';
+    public string $drinkCategoryFilter = 'all';
+    public int $drinkPerPage = 12;
+    public bool $showDrinkModal = false;
+    public ?int $editingDrinkId = null;
+    public string $drinkNameEn = '';
+    public string $drinkNameKm = '';
+    public string $drinkCategory = 'coffee';
+    public $drinkBranchId = null;
+    public string $drinkDescriptionEn = '';
+    public string $drinkDescriptionKm = '';
+    public bool $drinkIsAvailable = true;
+    public array $drinkLayers = [];
 
     // --- Report Filters ---
     public $filterBranchId = 'all';
@@ -89,6 +106,9 @@ new class extends Component
         }
         if (in_array($propertyName, ['staffSearch', 'staffPerPage'], true)) {
             $this->resetPage('staffPage');
+        }
+        if (in_array($propertyName, ['drinkSearch', 'drinkBranchFilter', 'drinkCategoryFilter', 'drinkPerPage'], true)) {
+            $this->resetPage('drinkPage');
         }
     }
 
@@ -263,6 +283,235 @@ new class extends Component
             $this->flashMessage = "Webhook failed: {$desc}";
             $this->flashType = 'error';
         }
+    }
+
+    public function openCreateDrinkModal(): void
+    {
+        $this->editingDrinkId = null;
+        $this->drinkNameEn = '';
+        $this->drinkNameKm = '';
+        $this->drinkCategory = 'coffee';
+        $this->drinkBranchId = Branch::first()?->id;
+        $this->drinkDescriptionEn = '';
+        $this->drinkDescriptionKm = '';
+        $this->drinkIsAvailable = true;
+        $this->drinkLayers = [
+            [
+                'id' => 'sweetness',
+                'name_en' => 'Sweetness',
+                'name_km' => 'កម្រិតជាតិផ្អែម',
+                'options' => [
+                    ['en' => '0% No Sugar', 'km' => 'គ្មានស្ករ ០%'],
+                    ['en' => '50% Less Sugar', 'km' => 'ស្ករតិច ៥០%'],
+                    ['en' => '100% Normal', 'km' => 'ស្ករធម្មតា ១០០%'],
+                ],
+            ],
+            [
+                'id' => 'ice',
+                'name_en' => 'Ice Level',
+                'name_km' => 'កម្រិតទឹកកក',
+                'options' => [
+                    ['en' => 'No Ice', 'km' => 'គ្មានទឹកកក'],
+                    ['en' => 'Less Ice', 'km' => 'ទឹកកកតិច'],
+                    ['en' => 'Normal Ice', 'km' => 'ទឹកកកធម្មតា'],
+                ],
+            ],
+        ];
+        $this->showDrinkModal = true;
+    }
+
+    public function openEditDrinkModal(int $drinkId): void
+    {
+        $drink = DrinkItem::findOrFail($drinkId);
+        $this->editingDrinkId = $drink->id;
+        $this->drinkNameEn = $drink->name;
+        $this->drinkNameKm = $drink->name_km ?? '';
+        $this->drinkCategory = $drink->category ?? 'coffee';
+        $this->drinkBranchId = $drink->branch_id;
+        $this->drinkDescriptionEn = $drink->description ?? '';
+        $this->drinkDescriptionKm = $drink->description_km ?? '';
+        $this->drinkIsAvailable = (bool) $drink->is_available;
+        $this->drinkLayers = $drink->normalized_layers;
+        $this->showDrinkModal = true;
+    }
+
+    public function closeDrinkModal(): void
+    {
+        $this->showDrinkModal = false;
+        $this->editingDrinkId = null;
+    }
+
+    public function addLayer(): void
+    {
+        $this->drinkLayers[] = [
+            'id' => 'layer_' . uniqid(),
+            'name_en' => 'New Layer',
+            'name_km' => '',
+            'options' => [
+                ['en' => 'Option 1', 'km' => ''],
+                ['en' => 'Option 2', 'km' => ''],
+            ],
+        ];
+    }
+
+    public function removeLayer(int $layerIndex): void
+    {
+        unset($this->drinkLayers[$layerIndex]);
+        $this->drinkLayers = array_values($this->drinkLayers);
+    }
+
+    public function addChoice(int $layerIndex): void
+    {
+        if (isset($this->drinkLayers[$layerIndex])) {
+            $this->drinkLayers[$layerIndex]['options'][] = [
+                'en' => '',
+                'km' => '',
+            ];
+        }
+    }
+
+    public function removeChoice(int $layerIndex, int $choiceIndex): void
+    {
+        if (isset($this->drinkLayers[$layerIndex]['options'][$choiceIndex])) {
+            unset($this->drinkLayers[$layerIndex]['options'][$choiceIndex]);
+            $this->drinkLayers[$layerIndex]['options'] = array_values($this->drinkLayers[$layerIndex]['options']);
+        }
+    }
+
+    public function addSugarPreset(): void
+    {
+        $this->drinkLayers[] = [
+            'id' => 'sweetness_' . uniqid(),
+            'name_en' => 'Sweetness',
+            'name_km' => 'កម្រិតជាតិផ្អែម',
+            'options' => [
+                ['en' => '0% No Sugar', 'km' => 'គ្មានស្ករ ០%'],
+                ['en' => '25% Sweet', 'km' => 'ផ្អែមតិច ២៥%'],
+                ['en' => '50% Half Sweet', 'km' => 'ផ្អែមល្មម ៥០%'],
+                ['en' => '100% Normal', 'km' => 'ស្ករធម្មតា ១០០%'],
+            ],
+        ];
+    }
+
+    public function addIcePreset(): void
+    {
+        $this->drinkLayers[] = [
+            'id' => 'ice_' . uniqid(),
+            'name_en' => 'Ice Level',
+            'name_km' => 'កម្រិតទឹកកក',
+            'options' => [
+                ['en' => 'Hot', 'km' => 'ក្តៅ'],
+                ['en' => 'No Ice', 'km' => 'គ្មានទឹកកក'],
+                ['en' => 'Less Ice', 'km' => 'ទឹកកកតិច'],
+                ['en' => 'Normal Ice', 'km' => 'ទឹកកកធម្មតា'],
+            ],
+        ];
+    }
+
+    public function addStrengthPreset(): void
+    {
+        $this->drinkLayers[] = [
+            'id' => 'strength_' . uniqid(),
+            'name_en' => 'Coffee Strength',
+            'name_km' => 'កម្រិតកាហ្វេ',
+            'options' => [
+                ['en' => 'Single Shot', 'km' => 'កាហ្វេ ១ កូនកែវ'],
+                ['en' => 'Double Shot', 'km' => 'កាហ្វេ ២ កូនកែវ'],
+                ['en' => 'Decaf', 'km' => 'គ្មានជាតិកាហ្វេអ៊ីន'],
+            ],
+        ];
+    }
+
+    public function addShakePreset(): void
+    {
+        $this->drinkLayers[] = [
+            'id' => 'preparation_' . uniqid(),
+            'name_en' => 'Preparation Style',
+            'name_km' => 'របៀបក្រឡុក / ឆុង',
+            'options' => [
+                ['en' => 'Shaken', 'km' => 'ក្រឡុក (Shake)'],
+                ['en' => 'Stirred', 'km' => 'កូរធម្មតា (Stirred)'],
+                ['en' => 'Blended / Frappe', 'km' => 'កិនម៉ត់ (Blended)'],
+            ],
+        ];
+    }
+
+    public function toggleDrinkAvailability(int $drinkId): void
+    {
+        $drink = DrinkItem::findOrFail($drinkId);
+        $drink->update(['is_available' => !$drink->is_available]);
+        $statusText = $drink->is_available ? __('cbvh.in_stock') : __('cbvh.out_of_stock');
+        $this->flashMessage = "{$drink->name}: {$statusText}";
+        $this->flashType = 'success';
+    }
+
+    public function deleteDrink(int $drinkId): void
+    {
+        $drink = DrinkItem::findOrFail($drinkId);
+        $name = $drink->name;
+        $drink->delete();
+        $this->flashMessage = __('cbvh.drink_deleted_success') . " ({$name})";
+        $this->flashType = 'success';
+    }
+
+    public function saveDrink(): void
+    {
+        $this->validate([
+            'drinkNameEn' => 'required|min:2|max:100',
+            'drinkCategory' => 'required|string|max:50',
+            'drinkBranchId' => 'nullable|exists:branches,id',
+        ]);
+
+        $cleanedLayers = [];
+        foreach ($this->drinkLayers as $layer) {
+            $nameEn = trim($layer['name_en'] ?? '');
+            if (empty($nameEn)) continue;
+
+            $validOptions = [];
+            foreach ($layer['options'] ?? [] as $opt) {
+                $optEn = trim(is_array($opt) ? ($opt['en'] ?? '') : (string) $opt);
+                $optKm = trim(is_array($opt) ? ($opt['km'] ?? '') : '');
+                if ($optEn !== '') {
+                    $validOptions[] = [
+                        'en' => $optEn,
+                        'km' => $optKm ?: $optEn,
+                    ];
+                }
+            }
+
+            if (!empty($validOptions)) {
+                $cleanedLayers[] = [
+                    'id' => $layer['id'] ?? ('layer_' . uniqid()),
+                    'name_en' => $nameEn,
+                    'name_km' => trim($layer['name_km'] ?? '') ?: $nameEn,
+                    'options' => $validOptions,
+                ];
+            }
+        }
+
+        $data = [
+            'branch_id' => $this->drinkBranchId ?: (Branch::first()?->id ?? 1),
+            'name' => trim($this->drinkNameEn),
+            'name_km' => trim($this->drinkNameKm) ?: null,
+            'category' => strtolower(trim($this->drinkCategory)),
+            'description' => trim($this->drinkDescriptionEn) ?: null,
+            'description_km' => trim($this->drinkDescriptionKm) ?: null,
+            'is_available' => (bool) $this->drinkIsAvailable,
+            'options_config' => ['layers' => $cleanedLayers],
+        ];
+
+        if ($this->editingDrinkId) {
+            $drink = DrinkItem::findOrFail($this->editingDrinkId);
+            $drink->update($data);
+            $this->flashMessage = __('cbvh.drink_updated_success') . " ({$drink->name})";
+        } else {
+            $drink = DrinkItem::create($data);
+            $this->flashMessage = __('cbvh.drink_created_success') . " ({$drink->name})";
+        }
+
+        $this->flashType = 'success';
+        $this->showDrinkModal = false;
+        $this->editingDrinkId = null;
     }
 
     protected function buildFilteredOrdersQuery()
@@ -473,6 +722,28 @@ new class extends Component
 
         $paginatedStaff = $staffQuery->paginate($this->staffPerPage, pageName: 'staffPage');
 
+        $drinkQuery = DrinkItem::with('branch')->latest();
+        if ($this->drinkBranchFilter !== 'all') {
+            $drinkQuery->where('branch_id', $this->drinkBranchFilter);
+        }
+        if ($this->drinkCategoryFilter !== 'all') {
+            $drinkQuery->where('category', $this->drinkCategoryFilter);
+        }
+        if (!empty(trim($this->drinkSearch))) {
+            $s = trim($this->drinkSearch);
+            $drinkQuery->where(function ($dq) use ($s) {
+                $dq->where('name', 'like', "%{$s}%")
+                    ->orWhere('name_km', 'like', "%{$s}%")
+                    ->orWhere('description', 'like', "%{$s}%")
+                    ->orWhere('category', 'like', "%{$s}%");
+            });
+        }
+        $paginatedDrinks = $drinkQuery->paginate($this->drinkPerPage, pageName: 'drinkPage');
+        $drinkCategories = DrinkItem::select('category')->distinct()->pluck('category')->filter()->values()->all();
+        if (empty($drinkCategories)) {
+            $drinkCategories = ['coffee', 'tea', 'special'];
+        }
+
         return [
             'branches' => Branch::all(),
             'orders' => $paginatedOrders,
@@ -484,6 +755,8 @@ new class extends Component
             'drinkTotals' => $drinkTotals,
             'filterUsers' => User::orderBy('name')->get(),
             'users' => $paginatedStaff,
+            'menuDrinks' => $paginatedDrinks,
+            'drinkCategories' => $drinkCategories,
             'currentHostUrl' => request()->getSchemeAndHttpHost(),
         ];
     }
@@ -587,6 +860,10 @@ new class extends Component
             <button wire:click="$set('activeSection', 'team')"
                     class="px-3.5 py-2 rounded-xl text-xs font-bold transition cursor-pointer {{ $activeSection === 'team' ? 'bg-[#9E6B55] text-white' : 'bg-[#F5EDE7] text-[#835440] border border-[#E8DDD6]' }}">
                 👥 {{ __('cbvh.tab_team_bot') }}
+            </button>
+            <button wire:click="$set('activeSection', 'drinks')"
+                    class="px-3.5 py-2 rounded-xl text-xs font-bold transition cursor-pointer {{ $activeSection === 'drinks' ? 'bg-[#9E6B55] text-white' : 'bg-[#F5EDE7] text-[#835440] border border-[#E8DDD6]' }}">
+                ☕ {{ __('cbvh.tab_drink_menu') }}
             </button>
 
             <a href="{{ route('lang.switch', app()->getLocale() === 'km' ? 'en' : 'km') }}"
@@ -1071,13 +1348,367 @@ new class extends Component
                             <span class="underline text-[11px]">{{ __('cbvh.switch') }}</span>
                         </button>
                     </div>
-
-
                 </div>
             </div>
         @endif
 
+        @if($activeSection === 'drinks')
+            <div class="space-y-6">
+                <!-- Top Toolbar & Controls -->
+                <div class="bg-white dark:bg-[#241C19] p-5 rounded-3xl border border-[#E8DDD6] dark:border-[#3D2F29] shadow-2xs flex flex-wrap items-center justify-between gap-4">
+                    <div>
+                        <h2 class="text-base font-bold text-[#2C211C] dark:text-[#F5EDE7]">{{ __('cbvh.drink_mgmt_title') }}</h2>
+                        <p class="text-xs text-[#7C6A60] dark:text-[#BBA79D]">{{ __('cbvh.drink_mgmt_subtitle') }}</p>
+                    </div>
+
+                    <div class="flex flex-wrap items-center gap-3">
+                        <button type="button" wire:click="openCreateDrinkModal"
+                                class="px-4 py-2.5 rounded-2xl bg-[#9E6B55] hover:bg-[#835440] text-white font-bold text-xs shadow-md transition cursor-pointer flex items-center space-x-1.5">
+                            <span>☕</span>
+                            <span>{{ __('cbvh.btn_add_drink') }}</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Filters & Search Bar -->
+                <div class="bg-white dark:bg-[#241C19] p-4 rounded-2xl border border-[#E8DDD6] dark:border-[#3D2F29] shadow-2xs flex flex-wrap items-center gap-3">
+                    <div class="flex-1 min-w-[220px]">
+                        <input type="text" wire:model.live.debounce.300ms="drinkSearch"
+                               placeholder="Search drink name, category..."
+                               class="w-full text-xs p-2.5 rounded-xl border border-[#E8DDD6] dark:border-[#3D2F29] bg-[#FAF6F3] dark:bg-[#1A1412] text-[#2C211C] dark:text-[#F5EDE7] focus:border-[#9E6B55] focus:outline-hidden" />
+                    </div>
+
+                    <div class="flex items-center space-x-2">
+                        <label class="text-xs font-semibold text-[#7C6A60] shrink-0">{{ __('cbvh.category') }}:</label>
+                        <select wire:model.live="drinkCategoryFilter"
+                                class="text-xs p-2.5 rounded-xl border border-[#E8DDD6] dark:border-[#3D2F29] bg-[#FAF6F3] dark:bg-[#1A1412] text-[#2C211C] dark:text-[#F5EDE7] font-semibold cursor-pointer">
+                            <option value="all">All Categories</option>
+                            @foreach($drinkCategories as $cat)
+                                <option value="{{ $cat }}">{{ ucfirst($cat) }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+
+                    <div class="flex items-center space-x-2">
+                        <label class="text-xs font-semibold text-[#7C6A60] shrink-0">Branch:</label>
+                        <select wire:model.live="drinkBranchFilter"
+                                class="text-xs p-2.5 rounded-xl border border-[#E8DDD6] dark:border-[#3D2F29] bg-[#FAF6F3] dark:bg-[#1A1412] text-[#2C211C] dark:text-[#F5EDE7] font-semibold cursor-pointer">
+                            <option value="all">{{ __('cbvh.all_branches') }}</option>
+                            @foreach($branches as $b)
+                                <option value="{{ $b->id }}">{{ $b->code }} {{ $b->is_hq ? '(HQ)' : '' }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Drinks Grid -->
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    @forelse($menuDrinks as $drink)
+                        <div wire:key="admin-drink-card-{{ $drink->id }}"
+                             class="bg-white dark:bg-[#241C19] rounded-2xl border border-[#E8DDD6] dark:border-[#3D2F29] p-5 shadow-2xs hover:shadow-md transition flex flex-col justify-between space-y-4 {{ !$drink->is_available ? 'opacity-70 bg-[#FAF6F3]/50' : '' }}">
+                            <div class="space-y-2.5">
+                                <div class="flex items-start justify-between gap-2">
+                                    <div class="space-y-0.5">
+                                        <div class="flex items-center space-x-2">
+                                            <h3 class="font-bold text-sm text-[#2C211C] dark:text-[#F5EDE7] leading-snug">
+                                                {{ $drink->name }}
+                                            </h3>
+                                            @if($drink->is_available)
+                                                <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300">
+                                                    {{ __('cbvh.in_stock') }}
+                                                </span>
+                                            @else
+                                                <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300">
+                                                    {{ __('cbvh.out_of_stock') }}
+                                                </span>
+                                            @endif
+                                        </div>
+                                        @if($drink->name_km)
+                                            <div class="text-xs font-semibold text-[#835440] dark:text-[#E8CFC1]">
+                                                {{ $drink->name_km }}
+                                            </div>
+                                        @endif
+                                    </div>
+
+                                    <div class="flex items-center space-x-1 shrink-0">
+                                        <span class="px-2 py-0.5 rounded-lg text-[10px] font-bold uppercase tracking-wider bg-[#F5EDE7] dark:bg-[#3D2F29] text-[#835440] dark:text-[#E8CFC1]">
+                                            {{ $drink->category ?: 'drink' }}
+                                        </span>
+                                    </div>
+                                </div>
+
+                                @if($drink->description || $drink->description_km)
+                                    <p class="text-xs text-[#7C6A60] dark:text-[#BBA79D] leading-relaxed line-clamp-2">
+                                        {{ app()->getLocale() === 'km' && !empty($drink->description_km) ? $drink->description_km : ($drink->description ?: $drink->description_km) }}
+                                    </p>
+                                @endif
+
+                                <!-- Configured Layers Badges -->
+                                @php $layers = $drink->normalized_layers; @endphp
+                                @if(!empty($layers))
+                                    <div class="pt-2 border-t border-[#FAF6F3] dark:border-[#3D2F29]/60 flex flex-wrap items-center gap-1.5">
+                                        @foreach($layers as $lyr)
+                                            <span class="inline-flex items-center px-2 py-1 rounded-md text-[10px] font-semibold bg-[#FAF6F3] dark:bg-[#1A1412] text-[#7C6A60] dark:text-[#BBA79D] border border-[#E8DDD6] dark:border-[#3D2F29]">
+                                                ⚙️ {{ $lyr['name_en'] }} ({{ count($lyr['options'] ?? []) }})
+                                            </span>
+                                        @endforeach
+                                    </div>
+                                @endif
+                            </div>
+
+                            <!-- Card Action Buttons -->
+                            <div class="pt-3 border-t border-[#E8DDD6] dark:border-[#3D2F29] flex items-center justify-between gap-2">
+                                <button type="button" wire:click="toggleDrinkAvailability({{ $drink->id }})"
+                                        class="px-2.5 py-1.5 rounded-xl text-[11px] font-bold border transition cursor-pointer {{ $drink->is_available ? 'bg-emerald-50 border-emerald-300 text-emerald-800 hover:bg-emerald-100' : 'bg-rose-50 border-rose-300 text-rose-800 hover:bg-rose-100' }}"
+                                        title="{{ __('cbvh.toggle_stock') }}">
+                                    {{ $drink->is_available ? '🟢 ' . __('cbvh.in_stock') : '🔴 ' . __('cbvh.out_of_stock') }}
+                                </button>
+
+                                <div class="flex items-center space-x-1.5">
+                                    <button type="button" wire:click="openEditDrinkModal({{ $drink->id }})"
+                                            class="px-3 py-1.5 rounded-xl bg-[#FAF6F3] dark:bg-[#1A1412] hover:bg-[#F5EDE7] text-[#835440] dark:text-[#E8CFC1] font-bold text-xs border border-[#E8DDD6] dark:border-[#3D2F29] transition cursor-pointer">
+                                        ✏️ {{ __('cbvh.edit_drink') }}
+                                    </button>
+                                    <button type="button" wire:click="deleteDrink({{ $drink->id }})"
+                                            wire:confirm="{{ __('cbvh.confirm_delete_drink') }}"
+                                            class="p-1.5 rounded-xl bg-rose-50 dark:bg-rose-950/40 text-rose-600 hover:bg-rose-100 transition cursor-pointer text-xs"
+                                            title="Delete Drink">
+                                        🗑️
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    @empty
+                        <div class="col-span-full bg-white dark:bg-[#241C19] rounded-2xl border border-[#E8DDD6] p-10 text-center space-y-3">
+                            <div class="text-3xl">☕</div>
+                            <div class="text-sm font-bold text-[#2C211C] dark:text-[#F5EDE7]">No drinks found</div>
+                            <p class="text-xs text-[#7C6A60] dark:text-[#BBA79D]">Click "+ Add New Drink" above to create custom bilingual items with flexible layers.</p>
+                        </div>
+                    @endforelse
+                </div>
+
+                <!-- Pagination Footer -->
+                @if($menuDrinks->hasPages() || $menuDrinks->total() > 0)
+                    <div class="p-4 bg-white dark:bg-[#241C19] rounded-2xl border border-[#E8DDD6] dark:border-[#3D2F29] flex flex-wrap items-center justify-between gap-3 text-xs">
+                        <div class="text-[#7C6A60] dark:text-[#BBA79D]">
+                            Showing <span class="font-bold text-[#2C211C] dark:text-[#F5EDE7]">{{ $menuDrinks->firstItem() ?? 0 }}</span>–<span class="font-bold text-[#2C211C] dark:text-[#F5EDE7]">{{ $menuDrinks->lastItem() ?? 0 }}</span> of <span class="font-bold text-[#2C211C] dark:text-[#F5EDE7]">{{ $menuDrinks->total() }}</span> drinks
+                        </div>
+                        <div class="scale-90 origin-right">
+                            {{ $menuDrinks->links() }}
+                        </div>
+                    </div>
+                @endif
+            </div>
+        @endif
+
     </main>
+
+    <!-- Create / Edit Drink Modal with Dynamic Layers Builder -->
+    @if($showDrinkModal)
+        <div class="fixed inset-0 bg-[#2C211C]/60 backdrop-blur-xs z-50 flex items-center justify-center p-4 overflow-y-auto"
+             wire:keydown.escape="closeDrinkModal">
+            <div class="bg-white dark:bg-[#241C19] w-full max-w-2xl rounded-3xl p-6 border border-[#E8DDD6] dark:border-[#3D2F29] shadow-2xl space-y-5 my-6 max-h-[90vh] overflow-y-auto">
+                <div class="flex items-center justify-between border-b border-[#E8DDD6] dark:border-[#3D2F29] pb-3">
+                    <div class="flex items-center space-x-3">
+                        <div class="w-10 h-10 rounded-2xl bg-[#F5EDE7] dark:bg-[#3D2F29] text-[#835440] dark:text-[#E8CFC1] flex items-center justify-center text-xl shrink-0">
+                            ☕
+                        </div>
+                        <div>
+                            <h3 class="font-bold text-sm text-[#2C211C] dark:text-[#F5EDE7]">
+                                {{ $editingDrinkId ? __('cbvh.edit_drink') : __('cbvh.btn_add_drink') }}
+                            </h3>
+                            <p class="text-xs text-[#7C6A60] dark:text-[#BBA79D]">
+                                {{ __('cbvh.drink_mgmt_subtitle') }}
+                            </p>
+                        </div>
+                    </div>
+                    <button type="button" wire:click="closeDrinkModal" class="w-8 h-8 rounded-full bg-[#FAF6F3] dark:bg-[#3A2C26] text-[#7C6A60] hover:text-[#2C211C] flex items-center justify-center text-lg font-bold cursor-pointer">&times;</button>
+                </div>
+
+                <form wire:submit="saveDrink" class="space-y-4">
+                    <!-- Bilingual Drink Name -->
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-xs font-semibold text-[#7C6A60] dark:text-[#BBA79D] mb-1">
+                                {{ __('cbvh.drink_name_en') }} <span class="text-rose-500">*</span>
+                            </label>
+                            <input type="text" wire:model="drinkNameEn" required placeholder="e.g. Milk Tea"
+                                   class="w-full text-xs p-2.5 rounded-xl border border-[#E8DDD6] dark:border-[#3D2F29] bg-[#FAF6F3] dark:bg-[#1A1412] text-[#2C211C] dark:text-[#F5EDE7] focus:border-[#9E6B55] focus:outline-hidden" />
+                            @error('drinkNameEn') <span class="text-xs text-rose-500 mt-1 block">{{ $message }}</span> @enderror
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-semibold text-[#7C6A60] dark:text-[#BBA79D] mb-1">
+                                {{ __('cbvh.drink_name_km') }} (Khmer)
+                            </label>
+                            <input type="text" wire:model="drinkNameKm" placeholder="ឧ. តែទឹកដោះគោ"
+                                   class="w-full text-xs p-2.5 rounded-xl border border-[#E8DDD6] dark:border-[#3D2F29] bg-[#FAF6F3] dark:bg-[#1A1412] text-[#2C211C] dark:text-[#F5EDE7] focus:border-[#9E6B55] focus:outline-hidden" />
+                            @error('drinkNameKm') <span class="text-xs text-rose-500 mt-1 block">{{ $message }}</span> @enderror
+                        </div>
+                    </div>
+
+                    <!-- Category & Branch -->
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-xs font-semibold text-[#7C6A60] dark:text-[#BBA79D] mb-1">
+                                {{ __('cbvh.category') }} <span class="text-rose-500">*</span>
+                            </label>
+                            <input type="text" wire:model="drinkCategory" required placeholder="e.g. tea, coffee, special"
+                                   class="w-full text-xs p-2.5 rounded-xl border border-[#E8DDD6] dark:border-[#3D2F29] bg-[#FAF6F3] dark:bg-[#1A1412] text-[#2C211C] dark:text-[#F5EDE7] focus:border-[#9E6B55] focus:outline-hidden" />
+                            @error('drinkCategory') <span class="text-xs text-rose-500 mt-1 block">{{ $message }}</span> @enderror
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-semibold text-[#7C6A60] dark:text-[#BBA79D] mb-1">
+                                Branch
+                            </label>
+                            <select wire:model="drinkBranchId"
+                                    class="w-full text-xs p-2.5 rounded-xl border border-[#E8DDD6] dark:border-[#3D2F29] bg-[#FAF6F3] dark:bg-[#1A1412] text-[#2C211C] dark:text-[#F5EDE7] focus:border-[#9E6B55] focus:outline-hidden">
+                                <option value="">{{ __('cbvh.all_branches') }}</option>
+                                @foreach($branches as $b)
+                                    <option value="{{ $b->id }}">{{ $b->code }} {{ $b->is_hq ? '(HQ)' : '' }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Bilingual Descriptions -->
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-xs font-semibold text-[#7C6A60] dark:text-[#BBA79D] mb-1">
+                                {{ __('cbvh.drink_desc_en') }}
+                            </label>
+                            <textarea wire:model="drinkDescriptionEn" rows="2" placeholder="e.g. Classic Taiwanese style brown sugar milk tea"
+                                      class="w-full text-xs p-2.5 rounded-xl border border-[#E8DDD6] dark:border-[#3D2F29] bg-[#FAF6F3] dark:bg-[#1A1412] text-[#2C211C] dark:text-[#F5EDE7] focus:border-[#9E6B55] focus:outline-hidden"></textarea>
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-semibold text-[#7C6A60] dark:text-[#BBA79D] mb-1">
+                                {{ __('cbvh.drink_desc_km') }}
+                            </label>
+                            <textarea wire:model="drinkDescriptionKm" rows="2" placeholder="ឧ. តែទឹកដោះគោស្ករត្នោតបែបបុរាណតៃវ៉ាន់"
+                                      class="w-full text-xs p-2.5 rounded-xl border border-[#E8DDD6] dark:border-[#3D2F29] bg-[#FAF6F3] dark:bg-[#1A1412] text-[#2C211C] dark:text-[#F5EDE7] focus:border-[#9E6B55] focus:outline-hidden"></textarea>
+                        </div>
+                    </div>
+
+                    <!-- Stock Availability Checkbox -->
+                    <div class="flex items-center space-x-2.5 p-3 rounded-xl bg-[#FAF6F3] dark:bg-[#1E1715] border border-[#E8DDD6] dark:border-[#3D2F29]">
+                        <input type="checkbox" id="drinkIsAvailableCheckbox" wire:model="drinkIsAvailable"
+                               class="w-4 h-4 text-[#9E6B55] rounded-sm focus:ring-[#9E6B55] cursor-pointer" />
+                        <label for="drinkIsAvailableCheckbox" class="text-xs font-bold text-[#2C211C] dark:text-[#F5EDE7] cursor-pointer">
+                            {{ __('cbvh.in_stock') }} ({{ __('cbvh.toggle_stock') }})
+                        </label>
+                    </div>
+
+                    <!-- Dynamic Layer Builder -->
+                    <div class="space-y-3 pt-2 border-t border-[#E8DDD6] dark:border-[#3D2F29]">
+                        <div class="flex flex-wrap items-center justify-between gap-2">
+                            <div>
+                                <h4 class="font-bold text-xs uppercase tracking-wider text-[#9E6B55]">
+                                    {{ __('cbvh.custom_layers_title') }}
+                                </h4>
+                                <p class="text-[11px] text-[#7C6A60] dark:text-[#BBA79D]">
+                                    {{ __('cbvh.custom_layers_desc') }}
+                                </p>
+                            </div>
+
+                            <!-- Quick Preset Buttons -->
+                            <div class="flex flex-wrap items-center gap-1.5">
+                                <button type="button" wire:click="addSugarPreset"
+                                        class="px-2.5 py-1 text-[10px] font-bold rounded-lg bg-[#F5EDE7] hover:bg-[#9E6B55] text-[#835440] hover:text-white border border-[#E8DDD6] transition cursor-pointer">
+                                    {{ __('cbvh.preset_sugar') }}
+                                </button>
+                                <button type="button" wire:click="addIcePreset"
+                                        class="px-2.5 py-1 text-[10px] font-bold rounded-lg bg-[#F5EDE7] hover:bg-[#9E6B55] text-[#835440] hover:text-white border border-[#E8DDD6] transition cursor-pointer">
+                                    {{ __('cbvh.preset_ice') }}
+                                </button>
+                                <button type="button" wire:click="addStrengthPreset"
+                                        class="px-2.5 py-1 text-[10px] font-bold rounded-lg bg-[#F5EDE7] hover:bg-[#9E6B55] text-[#835440] hover:text-white border border-[#E8DDD6] transition cursor-pointer">
+                                    {{ __('cbvh.preset_strength') }}
+                                </button>
+                                <button type="button" wire:click="addShakePreset"
+                                        class="px-2.5 py-1 text-[10px] font-bold rounded-lg bg-[#F5EDE7] hover:bg-[#9E6B55] text-[#835440] hover:text-white border border-[#E8DDD6] transition cursor-pointer">
+                                    {{ __('cbvh.preset_shake') }}
+                                </button>
+                                <button type="button" wire:click="addLayer"
+                                        class="px-2.5 py-1 text-[10px] font-bold rounded-lg bg-emerald-50 hover:bg-emerald-600 text-emerald-800 hover:text-white border border-emerald-200 transition cursor-pointer">
+                                    {{ __('cbvh.btn_add_layer') }}
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Layer Items Container -->
+                        <div class="space-y-3">
+                            @forelse($drinkLayers as $lIdx => $layer)
+                                <div wire:key="drink-layer-card-{{ $lIdx }}"
+                                     class="p-3.5 rounded-2xl bg-[#FAF6F3]/80 dark:bg-[#1E1715]/80 border border-[#E8DDD6] dark:border-[#3D2F29] space-y-3">
+                                    <!-- Layer Header: Name EN & Name KM -->
+                                    <div class="flex items-center justify-between gap-2">
+                                        <div class="grid grid-cols-2 gap-2 flex-1">
+                                            <input type="text" wire:model="drinkLayers.{{ $lIdx }}.name_en"
+                                                   placeholder="{{ __('cbvh.layer_name_en') }}"
+                                                   class="text-xs p-2 rounded-lg border border-[#E8DDD6] dark:border-[#3D2F29] bg-white dark:bg-[#241C19] text-[#2C211C] dark:text-[#F5EDE7] font-bold focus:border-[#9E6B55] focus:outline-hidden" />
+                                            <input type="text" wire:model="drinkLayers.{{ $lIdx }}.name_km"
+                                                   placeholder="{{ __('cbvh.layer_name_km') }}"
+                                                   class="text-xs p-2 rounded-lg border border-[#E8DDD6] dark:border-[#3D2F29] bg-white dark:bg-[#241C19] text-[#2C211C] dark:text-[#F5EDE7] font-semibold focus:border-[#9E6B55] focus:outline-hidden" />
+                                        </div>
+                                        <button type="button" wire:click="removeLayer({{ $lIdx }})"
+                                                class="px-2 py-1.5 rounded-lg text-[11px] font-bold bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 transition cursor-pointer shrink-0"
+                                                title="{{ __('cbvh.btn_remove_layer') }}">
+                                            🗑️
+                                        </button>
+                                    </div>
+
+                                    <!-- Choices List -->
+                                    <div class="space-y-1.5 pl-2 border-l-2 border-[#9E6B55]/30">
+                                        <div class="flex items-center justify-between text-[11px] font-semibold text-[#7C6A60] mb-1">
+                                            <span>Choices:</span>
+                                            <button type="button" wire:click="addChoice({{ $lIdx }})"
+                                                    class="text-[10px] font-bold text-[#835440] hover:underline cursor-pointer">
+                                                {{ __('cbvh.btn_add_choice') }}
+                                            </button>
+                                        </div>
+                                        @foreach($layer['options'] ?? [] as $cIdx => $choice)
+                                            <div wire:key="drink-choice-{{ $lIdx }}-{{ $cIdx }}"
+                                                 class="flex items-center space-x-2">
+                                                <input type="text" wire:model="drinkLayers.{{ $lIdx }}.options.{{ $cIdx }}.en"
+                                                       placeholder="{{ __('cbvh.choice_en') }}"
+                                                       class="flex-1 text-xs p-1.5 rounded-lg border border-[#E8DDD6] dark:border-[#3D2F29] bg-white dark:bg-[#241C19] text-[#2C211C] dark:text-[#F5EDE7] focus:outline-hidden" />
+                                                <input type="text" wire:model="drinkLayers.{{ $lIdx }}.options.{{ $cIdx }}.km"
+                                                       placeholder="{{ __('cbvh.choice_km') }}"
+                                                       class="flex-1 text-xs p-1.5 rounded-lg border border-[#E8DDD6] dark:border-[#3D2F29] bg-white dark:bg-[#241C19] text-[#2C211C] dark:text-[#F5EDE7] focus:outline-hidden" />
+                                                <button type="button" wire:click="removeChoice({{ $lIdx }}, {{ $cIdx }})"
+                                                        class="w-6 h-6 rounded-md bg-rose-50 hover:bg-rose-100 text-rose-600 flex items-center justify-center text-xs font-bold cursor-pointer shrink-0"
+                                                        title="{{ __('cbvh.btn_remove_choice') }}">
+                                                    &times;
+                                                </button>
+                                            </div>
+                                        @endforeach
+                                    </div>
+                                </div>
+                            @empty
+                                <div class="p-4 rounded-xl border border-dashed border-[#E8DDD6] text-center text-xs text-[#7C6A60]">
+                                    No custom layers added. Click a preset button above to add layers like Sweetness, Ice, or Strength.
+                                </div>
+                            @endforelse
+                        </div>
+                    </div>
+
+                    <!-- Modal Actions -->
+                    <div class="grid grid-cols-2 gap-3 pt-3 border-t border-[#E8DDD6] dark:border-[#3D2F29]">
+                        <button type="button" wire:click="closeDrinkModal"
+                                class="py-2.5 px-4 rounded-xl bg-[#FAF6F3] dark:bg-[#1A1412] border border-[#E8DDD6] dark:border-[#3D2F29] text-[#2C211C] dark:text-[#F5EDE7] font-bold text-xs cursor-pointer hover:bg-[#F5EDE7] transition">
+                            Cancel
+                        </button>
+                        <button type="submit"
+                                class="py-2.5 px-4 rounded-xl bg-[#9E6B55] hover:bg-[#835440] text-white font-bold text-xs shadow-md cursor-pointer transition">
+                            💾 Save Drink
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    @endif
 
     <!-- Reset Password Modal -->
     @if($showResetPasswordModal)

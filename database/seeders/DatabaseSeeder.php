@@ -87,8 +87,10 @@ class DatabaseSeeder extends Seeder
         $menuTemplate = [
             [
                 'name' => 'Ice Milk Coffee',
+                'name_km' => 'កាហ្វេទឹកដោះគោទឹកកក',
                 'category' => 'coffee',
                 'description' => 'Traditional iced milk coffee brewed fresh with rich condensed milk.',
+                'description_km' => 'កាហ្វេទឹកដោះគោទឹកកកបែបបុរាណ ឆុងស្រស់ៗជាមួយទឹកដោះគោខាប់ដ៏ឈ្ងុយឆ្ងាញ់។',
                 'options_config' => [
                     'sugar_levels' => ['No Sugar', 'Less Sugar', 'Normal Sugar'],
                     'ice_levels' => ['Less Ice', 'Normal Ice', 'More Ice', 'Separate Ice'],
@@ -96,8 +98,10 @@ class DatabaseSeeder extends Seeder
             ],
             [
                 'name' => 'Red Lemon Tea',
+                'name_km' => 'តែក្រូចឆ្មារក្រហម',
                 'category' => 'tea',
                 'description' => 'Refreshing brewed red tea infused with fresh fragrant lemon juice.',
+                'description_km' => 'តែក្រហមឆុងស្រស់ លាយជាមួយទឹកក្រូចឆ្មារធម្មជាតិស្រស់ស្រាយ។',
                 'options_config' => [
                     'sugar_levels' => ['No Sugar', 'Less Sugar', 'Normal Sugar'],
                     'ice_levels' => ['Less Ice', 'Normal Ice', 'More Ice', 'Separate Ice'],
@@ -105,8 +109,10 @@ class DatabaseSeeder extends Seeder
             ],
             [
                 'name' => 'Samrong Basil Seeds',
+                'name_km' => 'សំរងគ្រាប់ជី',
                 'category' => 'tea',
                 'description' => 'Traditional cooling herbal beverage with malva nut (Samrong) and basil seeds.',
+                'description_km' => 'ភេសជ្ជៈត្រជាក់បែបបុរាណ ផ្សំពីផ្លែសំរង និងគ្រាប់ជីជួយសម្រាលកម្តៅក្នុងខ្លួន។',
                 'options_config' => [
                     'sugar_levels' => ['No Sugar', 'Less Sugar', 'Normal Sugar'],
                     'ice_levels' => ['Less Ice', 'Normal Ice', 'More Ice', 'Separate Ice'],
@@ -119,8 +125,10 @@ class DatabaseSeeder extends Seeder
                 DrinkItem::create([
                     'branch_id' => $branch->id,
                     'name' => $item['name'],
+                    'name_km' => $item['name_km'],
                     'category' => $item['category'],
                     'description' => $item['description'],
+                    'description_km' => $item['description_km'],
                     'options_config' => $item['options_config'],
                     'is_available' => true,
                 ]);

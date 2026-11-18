@@ -283,7 +283,13 @@ class TelegramService
 
         $parts = [];
         foreach ($options as $key => $val) {
-            $parts[] = ucfirst($key) . ': ' . $val;
+            if (is_array($val)) {
+                $layer = $val['layer_km'] ?? $val['layer_en'] ?? ucfirst($key);
+                $choice = $val['km'] ?? $val['en'] ?? '';
+                $parts[] = "{$layer}: {$choice}";
+            } else {
+                $parts[] = ucfirst($key) . ': ' . $val;
+            }
         }
 
         return ' (' . implode(', ', $parts) . ')';

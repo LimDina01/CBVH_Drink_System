@@ -33,6 +33,7 @@ new class extends Component
     public $selectedIce = 'Normal Ice';
     public $selectedMilk = 'Fresh Whole Milk';
     public $drinkQuantity = 1;
+    public array $selectedCustomLayers = [];
     public $drinkCart = [];
 
     // --- Delivery & Meeting Details ---
@@ -198,22 +199,31 @@ new class extends Component
     public function selectDrink($drinkId): void
     {
         $drink = DrinkItem::find($drinkId);
-        if (!$drink) return;
+        if (!$drink || !$drink->is_available) return;
 
         $this->selectedDrinkId = $drink->id;
-        $config = $drink->options_config ?? [];
-
-        $this->selectedSugar = $config['sugar_levels'][1] ?? '50%';
-        $this->selectedCoffee = $config['coffee_levels'][0] ?? 'Single Shot';
-        $this->selectedIce = $config['ice_levels'][1] ?? 'Normal Ice';
-        $this->selectedMilk = $config['milk_types'][0] ?? 'Fresh Whole Milk';
         $this->drinkQuantity = 1;
+
+        $this->selectedCustomLayers = [];
+        foreach ($drink->normalized_layers as $lIdx => $layer) {
+            $options = $layer['options'] ?? [];
+            if (!empty($options)) {
+                $defaultIndex = count($options) > 1 ? 1 : 0;
+                $this->selectedCustomLayers[$lIdx] = $options[$defaultIndex]['en'] ?? ($options[0]['en'] ?? '');
+            }
+        }
+
+        $config = $drink->options_config ?? [];
+        $this->selectedSugar = $config['sugar_levels'][1] ?? ($this->selectedCustomLayers[0] ?? '50%');
+        $this->selectedCoffee = $config['coffee_levels'][0] ?? 'Single Shot';
+        $this->selectedIce = $config['ice_levels'][1] ?? ($this->selectedCustomLayers[1] ?? 'Normal Ice');
+        $this->selectedMilk = $config['milk_types'][0] ?? 'Fresh Whole Milk';
     }
 
     public function addToCart(): void
     {
         $drink = DrinkItem::find($this->selectedDrinkId);
-        if (!$drink) return;
+        if (!$drink || !$drink->is_available) return;
 
         $qty = max(1, (int) $this->drinkQuantity);
         if ($this->orderType === 'instant' && !$this->extendingOrderId) {
@@ -234,11 +244,35 @@ new class extends Component
         }
 
         $options = [];
-        $config = $drink->options_config ?? [];
-        if (!empty($config['sugar_levels'])) $options['sugar'] = $this->selectedSugar;
-        if (!empty($config['coffee_levels'])) $options['coffee'] = $this->selectedCoffee;
-        if (!empty($config['ice_levels'])) $options['ice'] = $this->selectedIce;
-        if (!empty($config['milk_types'])) $options['milk'] = $this->selectedMilk;
+        $layers = $drink->normalized_layers;
+        if (!empty($layers)) {
+            foreach ($layers as $lIdx => $layer) {
+                $chosenEn = $this->selectedCustomLayers[$lIdx] ?? null;
+                if (!$chosenEn) {
+                    $layerEn = strtolower($layer['name_en']);
+                    if (str_contains($layerEn, 'sugar')) $chosenEn = $this->selectedSugar;
+                    elseif (str_contains($layerEn, 'ice')) $chosenEn = $this->selectedIce;
+                    elseif (str_contains($layerEn, 'coffee')) $chosenEn = $this->selectedCoffee;
+                    elseif (str_contains($layerEn, 'milk')) $chosenEn = $this->selectedMilk;
+                }
+
+                $match = collect($layer['options'])->firstWhere('en', $chosenEn)
+                    ?: ($layer['options'][0] ?? ['en' => $chosenEn, 'km' => $chosenEn]);
+
+                $options[$layer['name_en']] = [
+                    'en' => $match['en'] ?? $chosenEn,
+                    'km' => $match['km'] ?? $match['en'] ?? $chosenEn,
+                    'layer_en' => $layer['name_en'],
+                    'layer_km' => $layer['name_km'],
+                ];
+            }
+        } else {
+            $config = $drink->options_config ?? [];
+            if (!empty($config['sugar_levels'])) $options['sugar'] = $this->selectedSugar;
+            if (!empty($config['coffee_levels'])) $options['coffee'] = $this->selectedCoffee;
+            if (!empty($config['ice_levels'])) $options['ice'] = $this->selectedIce;
+            if (!empty($config['milk_types'])) $options['milk'] = $this->selectedMilk;
+        }
 
         $this->drinkCart[] = [
             'drink_id' => $drink->id,
@@ -788,22 +822,31 @@ new class extends Component
 
                     <div class="grid grid-cols-2 gap-3">
                         @foreach($drinks as $drink)
-                            <div wire:click="selectDrink({{ $drink->id }})"
-                                 class="cursor-pointer bg-white dark:bg-[#241C19] p-4 rounded-2xl border {{ $selectedDrinkId === $drink->id ? 'border-[#9E6B55] ring-2 ring-[#9E6B55]/20' : 'border-[#E8DDD6] dark:border-[#3D2F29]' }} hover:border-[#9E6B55] active:scale-[0.97] transition-all duration-150 shadow-[0_2px_12px_rgba(158,107,85,0.05)] flex flex-col justify-between group">
+                            @php $isAvailable = (bool) $drink->is_available; @endphp
+                            <div @if($isAvailable) wire:click="selectDrink({{ $drink->id }})" @endif
+                                 class="{{ $isAvailable ? 'cursor-pointer hover:border-[#9E6B55] active:scale-[0.97]' : 'opacity-60 cursor-not-allowed bg-slate-50 dark:bg-[#1E1715]' }} bg-white dark:bg-[#241C19] p-4 rounded-2xl border {{ $selectedDrinkId === $drink->id ? 'border-[#9E6B55] ring-2 ring-[#9E6B55]/20' : 'border-[#E8DDD6] dark:border-[#3D2F29]' }} transition-all duration-150 shadow-[0_2px_12px_rgba(158,107,85,0.05)] flex flex-col justify-between group">
                                 <div>
-                                    <div class="w-9 h-9 rounded-xl bg-[#FAF6F3] dark:bg-[#3A2C26] border border-[#E8DDD6] dark:border-[#4A3830] flex items-center justify-center text-lg mb-3">
-                                        @if($drink->category === 'coffee') ☕
-                                        @elseif($drink->category === 'tea') 🍵
-                                        @elseif($drink->category === 'juice') 🍊
-                                        @else 🥤
+                                    <div class="flex items-center justify-between mb-3">
+                                        <div class="w-9 h-9 rounded-xl bg-[#FAF6F3] dark:bg-[#3A2C26] border border-[#E8DDD6] dark:border-[#4A3830] flex items-center justify-center text-lg">
+                                            @if($drink->category === 'coffee') ☕
+                                            @elseif($drink->category === 'tea') 🍵
+                                            @elseif($drink->category === 'juice') 🍊
+                                            @elseif($drink->category === 'shake') 🥤
+                                            @else 🧋
+                                            @endif
+                                        </div>
+                                        @if(!$isAvailable)
+                                            <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-700 border border-rose-200">
+                                                {{ __('cbvh.out_of_stock') }}
+                                            </span>
                                         @endif
                                     </div>
-                                    <div class="font-bold text-sm text-[#2C211C] dark:text-[#F5EDE7] leading-snug">{{ \App\Support\CbvhLocale::drink($drink->name) }}</div>
-                                    <p class="text-[11px] text-[#7C6A60] dark:text-[#BBA79D] mt-1 line-clamp-2 leading-relaxed">{{ \App\Support\CbvhLocale::drinkDescription($drink->description) }}</p>
+                                    <div class="font-bold text-sm text-[#2C211C] dark:text-[#F5EDE7] leading-snug">{{ $drink->display_name }}</div>
+                                    <p class="text-[11px] text-[#7C6A60] dark:text-[#BBA79D] mt-1 line-clamp-2 leading-relaxed">{{ $drink->display_description }}</p>
                                 </div>
                                 <div class="mt-4">
-                                    <span class="inline-flex items-center justify-center w-full py-1.5 rounded-xl text-[11px] font-bold bg-[#F5EDE7] dark:bg-[#3A2C26] text-[#835440] dark:text-[#E8CFC1] group-hover:bg-[#9E6B55] group-hover:text-white transition">
-                                        {{ __('cbvh.customize') }}
+                                    <span class="inline-flex items-center justify-center w-full py-1.5 rounded-xl text-[11px] font-bold {{ $isAvailable ? 'bg-[#F5EDE7] dark:bg-[#3A2C26] text-[#835440] dark:text-[#E8CFC1] group-hover:bg-[#9E6B55] group-hover:text-white' : 'bg-slate-200 dark:bg-slate-800 text-slate-500' }} transition">
+                                        {{ $isAvailable ? __('cbvh.customize') : __('cbvh.out_of_stock') }}
                                     </span>
                                 </div>
                             </div>
@@ -832,7 +875,13 @@ new class extends Component
                                         <div class="font-bold text-[#2C211C] dark:text-[#F5EDE7]">{{ $item['quantity'] }}x {{ \App\Support\CbvhLocale::drink($item['name']) }}</div>
                                         <div class="text-[11px] text-[#7C6A60] dark:text-[#BBA79D]">
                                             @foreach($item['options'] as $k => $v)
-                                                <span>{{ \App\Support\CbvhLocale::optionKey($k) }}: {{ \App\Support\CbvhLocale::option($v) }}</span>@if(!$loop->last) • @endif
+                                                @php
+                                                    $isArr = is_array($v);
+                                                    $isKm = app()->getLocale() === 'km';
+                                                    $optLabel = $isArr ? ($isKm ? ($v['layer_km'] ?? $k) : ($v['layer_en'] ?? $k)) : \App\Support\CbvhLocale::optionKey($k);
+                                                    $optVal = $isArr ? ($isKm ? ($v['km'] ?? $v['en']) : ($v['en'] ?? $v['km'])) : \App\Support\CbvhLocale::option($v);
+                                                @endphp
+                                                <span>{{ $optLabel }}: {{ $optVal }}</span>@if(!$loop->last) • @endif
                                             @endforeach
                                         </div>
                                     </div>
@@ -1004,62 +1053,31 @@ new class extends Component
                         <button wire:click="$set('selectedDrinkId', null)" class="w-8 h-8 rounded-full bg-[#FAF6F3] dark:bg-[#3A2C26] text-[#7C6A60] hover:text-[#2C211C] flex items-center justify-center text-lg font-bold cursor-pointer">&times;</button>
                     </div>
 
-                    @php $opts = $currentDrink->options_config ?? []; @endphp
+                    @php $layers = $currentDrink->normalized_layers; @endphp
 
-                    @if(!empty($opts['sugar_levels']))
-                        <div>
-                            <label class="block text-[11px] font-bold uppercase tracking-wider text-[#7C6A60] dark:text-[#BBA79D] mb-1.5">{{ __('cbvh.sugar_level') }}</label>
-                            <div class="grid grid-cols-5 gap-1.5">
-                                @foreach($opts['sugar_levels'] as $sugar)
-                                    <button type="button" wire:click="$set('selectedSugar', '{{ $sugar }}')"
-                                        class="py-1.5 text-[11px] font-semibold rounded-xl border text-center transition cursor-pointer {{ $selectedSugar === $sugar ? 'bg-[#9E6B55] text-white border-[#9E6B55] shadow-xs' : 'bg-[#FAF6F3] dark:bg-[#1A1412] border-[#E8DDD6] dark:border-[#3D2F29] text-[#2C211C] dark:text-[#F5EDE7]' }}">
-                                        {{ \App\Support\CbvhLocale::option($sugar) }}
-                                    </button>
-                                @endforeach
+                    @if(!empty($layers))
+                        @foreach($layers as $lIdx => $layer)
+                            @php $optCount = count($layer['options'] ?? []); @endphp
+                            <div>
+                                <label class="block text-[11px] font-bold uppercase tracking-wider text-[#7C6A60] dark:text-[#BBA79D] mb-1.5">
+                                    {{ app()->getLocale() === 'km' && !empty($layer['name_km']) ? $layer['name_km'] : $layer['name_en'] }}
+                                </label>
+                                <div class="grid {{ $optCount === 2 ? 'grid-cols-2' : ($optCount === 3 ? 'grid-cols-3' : ($optCount === 4 ? 'grid-cols-4' : 'grid-cols-5')) }} gap-1.5">
+                                    @foreach($layer['options'] ?? [] as $opt)
+                                        @php
+                                            $optEn = $opt['en'] ?? (is_string($opt) ? $opt : '');
+                                            $optKm = $opt['km'] ?? $optEn;
+                                            $optLabel = app()->getLocale() === 'km' ? $optKm : $optEn;
+                                            $isSelected = ($selectedCustomLayers[$lIdx] ?? '') === $optEn;
+                                        @endphp
+                                        <button type="button" wire:click="$set('selectedCustomLayers.{{ $lIdx }}', '{{ addslashes($optEn) }}')"
+                                            class="py-1.5 px-2 text-[11px] font-semibold rounded-xl border text-center transition cursor-pointer {{ $isSelected ? 'bg-[#9E6B55] text-white border-[#9E6B55] shadow-xs' : 'bg-[#FAF6F3] dark:bg-[#1A1412] border-[#E8DDD6] dark:border-[#3D2F29] text-[#2C211C] dark:text-[#F5EDE7]' }}">
+                                            {{ $optLabel }}
+                                        </button>
+                                    @endforeach
+                                </div>
                             </div>
-                        </div>
-                    @endif
-
-                    @if(!empty($opts['coffee_levels']))
-                        <div>
-                            <label class="block text-[11px] font-bold uppercase tracking-wider text-[#7C6A60] dark:text-[#BBA79D] mb-1.5">{{ __('cbvh.coffee_strength') }}</label>
-                            <div class="grid grid-cols-3 gap-1.5">
-                                @foreach($opts['coffee_levels'] as $coffee)
-                                    <button type="button" wire:click="$set('selectedCoffee', '{{ $coffee }}')"
-                                        class="py-1.5 text-[11px] font-semibold rounded-xl border text-center transition cursor-pointer {{ $selectedCoffee === $coffee ? 'bg-[#9E6B55] text-white border-[#9E6B55] shadow-xs' : 'bg-[#FAF6F3] dark:bg-[#1A1412] border-[#E8DDD6] dark:border-[#3D2F29] text-[#2C211C] dark:text-[#F5EDE7]' }}">
-                                        {{ \App\Support\CbvhLocale::option($coffee) }}
-                                    </button>
-                                @endforeach
-                            </div>
-                        </div>
-                    @endif
-
-                    @if(!empty($opts['ice_levels']))
-                        <div>
-                            <label class="block text-[11px] font-bold uppercase tracking-wider text-[#7C6A60] dark:text-[#BBA79D] mb-1.5">{{ __('cbvh.ice_level') }}</label>
-                            <div class="grid grid-cols-3 gap-1.5">
-                                @foreach($opts['ice_levels'] as $ice)
-                                    <button type="button" wire:click="$set('selectedIce', '{{ $ice }}')"
-                                        class="py-1.5 text-[11px] font-semibold rounded-xl border text-center transition cursor-pointer {{ $selectedIce === $ice ? 'bg-[#9E6B55] text-white border-[#9E6B55] shadow-xs' : 'bg-[#FAF6F3] dark:bg-[#1A1412] border-[#E8DDD6] dark:border-[#3D2F29] text-[#2C211C] dark:text-[#F5EDE7]' }}">
-                                        {{ \App\Support\CbvhLocale::option($ice) }}
-                                    </button>
-                                @endforeach
-                            </div>
-                        </div>
-                    @endif
-
-                    @if(!empty($opts['milk_types']))
-                        <div>
-                            <label class="block text-[11px] font-bold uppercase tracking-wider text-[#7C6A60] dark:text-[#BBA79D] mb-1.5">{{ __('cbvh.milk_option') }}</label>
-                            <div class="grid grid-cols-2 gap-1.5">
-                                @foreach($opts['milk_types'] as $milk)
-                                    <button type="button" wire:click="$set('selectedMilk', '{{ $milk }}')"
-                                        class="py-1.5 text-[11px] font-semibold rounded-xl border text-center transition cursor-pointer {{ $selectedMilk === $milk ? 'bg-[#9E6B55] text-white border-[#9E6B55] shadow-xs' : 'bg-[#FAF6F3] dark:bg-[#1A1412] border-[#E8DDD6] dark:border-[#3D2F29] text-[#2C211C] dark:text-[#F5EDE7]' }}">
-                                        {{ \App\Support\CbvhLocale::option($milk) }}
-                                    </button>
-                                @endforeach
-                            </div>
-                        </div>
+                        @endforeach
                     @endif
 
                     <div class="flex items-center justify-between pt-2 border-t border-[#E8DDD6] dark:border-[#3D2F29]">

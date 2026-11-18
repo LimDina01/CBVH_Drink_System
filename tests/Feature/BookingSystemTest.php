@@ -1223,4 +1223,157 @@ class BookingSystemTest extends TestCase
             'people_count' => 5,
         ]);
     }
+
+    public function test_admin_can_create_bilingual_drink_with_dynamic_custom_layers(): void
+    {
+        $admin = User::where('role', 'admin')->first();
+
+        Livewire::actingAs($admin)
+            ->test('admin.approval-portal')
+            ->set('activeSection', 'drinks')
+            ->call('openCreateDrinkModal')
+            ->set('drinkNameEn', 'Brown Sugar Milk Tea')
+            ->set('drinkNameKm', 'តែទឹកដោះគោស្ករត្នោត')
+            ->set('drinkCategory', 'tea')
+            ->set('drinkDescriptionEn', 'Creamy rich milk tea')
+            ->set('drinkDescriptionKm', 'តែទឹកដោះគោរសជាតិឈ្ងុយឆ្ងាញ់')
+            ->set('drinkLayers', [
+                [
+                    'id' => 'shake_style',
+                    'name_en' => 'Preparation Style',
+                    'name_km' => 'របៀបក្រឡុក',
+                    'options' => [
+                        ['en' => 'Shaken', 'km' => 'ក្រឡុក'],
+                        ['en' => 'Blended', 'km' => 'កិន'],
+                    ],
+                ],
+                [
+                    'id' => 'sweetness',
+                    'name_en' => 'Sweetness',
+                    'name_km' => 'កម្រិតជាតិផ្អែម',
+                    'options' => [
+                        ['en' => '30%', 'km' => '៣០%'],
+                        ['en' => '50%', 'km' => '៥០%'],
+                        ['en' => '100%', 'km' => '១០០%'],
+                    ],
+                ],
+            ])
+            ->call('saveDrink')
+            ->assertSet('showDrinkModal', false);
+
+        $this->assertDatabaseHas('drink_items', [
+            'name' => 'Brown Sugar Milk Tea',
+            'name_km' => 'តែទឹកដោះគោស្ករត្នោត',
+            'category' => 'tea',
+            'is_available' => true,
+        ]);
+
+        $created = DrinkItem::where('name', 'Brown Sugar Milk Tea')->first();
+        $this->assertNotNull($created);
+        $this->assertCount(2, $created->normalized_layers);
+        $this->assertEquals('Preparation Style', $created->normalized_layers[0]['name_en']);
+        $this->assertEquals('របៀបក្រឡុក', $created->normalized_layers[0]['name_km']);
+    }
+
+    public function test_admin_can_toggle_drink_availability_and_staff_cannot_order_out_of_stock_item(): void
+    {
+        $admin = User::where('role', 'admin')->first();
+        $employee = User::where('role', 'employee')->first();
+        $drink = DrinkItem::where('name', 'Ice Milk Coffee')->first();
+
+        $this->assertTrue((bool) $drink->is_available);
+
+        // Admin toggles to Out of Stock
+        Livewire::actingAs($admin)
+            ->test('admin.approval-portal')
+            ->call('toggleDrinkAvailability', $drink->id);
+
+        $drink->refresh();
+        $this->assertFalse((bool) $drink->is_available);
+
+        // Staff tries to select out-of-stock drink in Mini App
+        Livewire::actingAs($employee)
+            ->test('mini-app.booking-app')
+            ->call('selectDrink', $drink->id)
+            ->assertSet('selectedDrinkId', null);
+
+        // Admin toggles back to In Stock
+        Livewire::actingAs($admin)
+            ->test('admin.approval-portal')
+            ->call('toggleDrinkAvailability', $drink->id);
+
+        $drink->refresh();
+        $this->assertTrue((bool) $drink->is_available);
+
+        // Staff can now select it
+        Livewire::actingAs($employee)
+            ->test('mini-app.booking-app')
+            ->call('selectDrink', $drink->id)
+            ->assertSet('selectedDrinkId', $drink->id);
+    }
+
+    public function test_staff_can_customize_and_order_drink_with_dynamic_layers(): void
+    {
+        Carbon::setTestNow(Carbon::create(2026, 11, 12, 10, 0, 0));
+
+        $employee = User::where('role', 'employee')->first();
+        $hq = Branch::where('code', 'HQ')->first();
+
+        $customDrink = DrinkItem::create([
+            'branch_id' => $hq->id,
+            'name' => 'Signature Milk Tea',
+            'name_km' => 'តែទឹកដោះគោពិសេស',
+            'category' => 'tea',
+            'is_available' => true,
+            'options_config' => [
+                'layers' => [
+                    [
+                        'id' => 'style',
+                        'name_en' => 'Preparation Style',
+                        'name_km' => 'របៀបឆុង',
+                        'options' => [
+                            ['en' => 'Shaken', 'km' => 'ក្រឡុក (Shake)'],
+                            ['en' => 'Stirred', 'km' => 'កូរ (Stirred)'],
+                        ],
+                    ],
+                    [
+                        'id' => 'sweetness',
+                        'name_en' => 'Sweetness',
+                        'name_km' => 'កម្រិតជាតិផ្អែម',
+                        'options' => [
+                            ['en' => '25% Sweet', 'km' => 'ផ្អែមតិច ២៥%'],
+                            ['en' => '50% Half Sweet', 'km' => 'ផ្អែមល្មម ៥០%'],
+                        ],
+                    ],
+                ],
+            ],
+        ]);
+
+        Livewire::actingAs($employee)
+            ->test('mini-app.booking-app')
+            ->call('selectDrink', $customDrink->id)
+            ->assertSet('selectedDrinkId', $customDrink->id)
+            ->set('selectedCustomLayers.0', 'Stirred')
+            ->set('selectedCustomLayers.1', '25% Sweet')
+            ->set('drinkQuantity', 2)
+            ->call('addToCart')
+            ->assertCount('drinkCart', 1)
+            ->call('submitDrinkOrder')
+            ->assertSet('flashType', 'success');
+
+        $this->assertDatabaseHas('drink_order_items', [
+            'drink_item_id' => $customDrink->id,
+            'quantity' => 2,
+        ]);
+
+        $orderItem = DrinkOrderItem::where('drink_item_id', $customDrink->id)->latest('id')->first();
+        $this->assertNotNull($orderItem);
+        $options = $orderItem->selected_options;
+        $this->assertArrayHasKey('Preparation Style', $options);
+        $this->assertEquals('Stirred', $options['Preparation Style']['en']);
+        $this->assertEquals('កូរ (Stirred)', $options['Preparation Style']['km']);
+        $this->assertArrayHasKey('Sweetness', $options);
+        $this->assertEquals('25% Sweet', $options['Sweetness']['en']);
+        $this->assertEquals('ផ្អែមតិច ២៥%', $options['Sweetness']['km']);
+    }
 }

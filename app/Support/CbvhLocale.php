@@ -46,7 +46,29 @@ class CbvhLocale
 
     public static function drink(?string $name): string
     {
-        return self::map('drinks', $name);
+        if ($name === null || $name === '') {
+            return '';
+        }
+
+        if (app()->getLocale() !== 'km') {
+            return $name;
+        }
+
+        $mapped = self::map('drinks', $name);
+        if ($mapped !== $name) {
+            return $mapped;
+        }
+
+        static $drinkCache = null;
+        if ($drinkCache === null) {
+            try {
+                $drinkCache = \App\Models\DrinkItem::whereNotNull('name_km')->pluck('name_km', 'name')->toArray();
+            } catch (\Throwable $e) {
+                $drinkCache = [];
+            }
+        }
+
+        return $drinkCache[$name] ?? $name;
     }
 
     public static function toBaseDrinkName(?string $name): string
