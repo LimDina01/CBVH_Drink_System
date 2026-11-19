@@ -75,7 +75,6 @@ new class extends Component
     public ?int $editingStaffId = null;
     public string $editingStaffName = '';
     public string $editingStaffEmployeeId = '';
-    public $editingStaffBranchId = null;
     public bool $showEditStaffModal = false;
 
     // --- Settings ---
@@ -213,7 +212,6 @@ new class extends Component
         $this->editingStaffId = $user->id;
         $this->editingStaffName = $user->name;
         $this->editingStaffEmployeeId = $user->employee_id ?? '';
-        $this->editingStaffBranchId = $user->branch_id ?? Branch::first()?->id;
         $this->showEditStaffModal = true;
     }
 
@@ -232,7 +230,6 @@ new class extends Component
         $this->validate([
             'editingStaffName' => 'required|min:2|max:100',
             'editingStaffEmployeeId' => 'required|min:2|max:50|unique:users,employee_id,' . $this->editingStaffId,
-            'editingStaffBranchId' => 'required|exists:branches,id',
         ]);
 
         $cleanEmpId = strtoupper(trim($this->editingStaffEmployeeId));
@@ -240,7 +237,6 @@ new class extends Component
         $user->update([
             'name' => trim($this->editingStaffName),
             'employee_id' => $cleanEmpId,
-            'branch_id' => $this->editingStaffBranchId,
         ]);
 
         $this->flashMessage = "Staff details updated for {$cleanEmpId} ({$user->name}).";
@@ -2140,7 +2136,7 @@ new class extends Component
                             Edit Staff Account
                         </h3>
                         <p class="text-xs text-[#7C6A60] dark:text-[#BBA79D]">
-                            Update full name, employee ID, or branch.
+                            Update full name or employee ID.
                         </p>
                     </div>
                 </div>
@@ -2164,17 +2160,6 @@ new class extends Component
                                class="w-full text-xs p-2.5 rounded-xl border border-[#E8DDD6] dark:border-[#3D2F29] bg-[#FAF6F3] dark:bg-[#1A1412] text-[#2C211C] dark:text-[#F5EDE7] font-bold uppercase focus:border-[#9E6B55] focus:outline-hidden"
                                placeholder="e.g. EMP100404" />
                         @error('editingStaffEmployeeId') <span class="text-xs text-rose-500 mt-1 block">{{ $message }}</span> @enderror
-                    </div>
-
-                    <div>
-                        <label class="block text-xs font-semibold text-[#7C6A60] dark:text-[#BBA79D] mb-1">Branch</label>
-                        <select wire:model="editingStaffBranchId"
-                                class="w-full text-xs p-2.5 rounded-xl border border-[#E8DDD6] dark:border-[#3D2F29] bg-[#FAF6F3] dark:bg-[#1A1412] text-[#2C211C] dark:text-[#F5EDE7] font-bold focus:border-[#9E6B55] focus:outline-hidden cursor-pointer">
-                            @foreach($branches as $b)
-                                <option value="{{ $b->id }}">{{ $b->name }} {{ $b->is_hq ? '(HQ)' : '' }}</option>
-                            @endforeach
-                        </select>
-                        @error('editingStaffBranchId') <span class="text-xs text-rose-500 mt-1 block">{{ $message }}</span> @enderror
                     </div>
 
                     <div class="grid grid-cols-2 gap-2 pt-2">

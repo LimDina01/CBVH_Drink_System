@@ -1626,7 +1626,6 @@ class BookingSystemTest extends TestCase
             ->assertSet('editingStaffEmployeeId', 'OLD123')
             ->set('editingStaffName', 'New Correct Name')
             ->set('editingStaffEmployeeId', 'EMP999')
-            ->set('editingStaffBranchId', $branch->id)
             ->call('saveEditedStaff')
             ->assertSet('flashType', 'success');
 
