@@ -214,7 +214,7 @@ new class extends Component
     public function markOrderCompleted($orderId)
     {
         $order = DrinkOrder::find($orderId);
-        if ($order) {
+        if ($order && in_array($order->status, ['approved', 'preparing', 'in_delivery'])) {
             $order->update([
                 'status' => 'completed',
                 'completed_at' => now(),
@@ -241,6 +241,12 @@ new class extends Component
 
     public function updateUserRole($userId, $role)
     {
+        if ((int) $userId === (int) Auth::id() && $role !== 'admin') {
+            $this->flashMessage = "You cannot demote your own account from Admin.";
+            $this->flashType = 'error';
+            return;
+        }
+
         $user = User::find($userId);
         if ($user && in_array($role, ['employee', 'barista', 'admin'])) {
             $user->update(['role' => $role]);
@@ -1307,7 +1313,13 @@ new class extends Component
                                             Barista
                                         </button>
                                     @elseif(in_array($order->status, ['approved', 'preparing', 'in_delivery']))
-                                        <button wire:click="markOrderCompleted({{ $order->id }})" class="px-2.5 py-1 bg-[#FAF6F3] border border-[#E8DDD6] text-[#2C211C] rounded-lg text-[10px] font-bold cursor-pointer hover:bg-[#F5EDE7]">
+                                        <button wire:click="markOrderCompleted({{ $order->id }})"
+                                                @if(in_array($order->status, ['approved', 'preparing']))
+                                                    wire:confirm="⚠️ Warning: Order #{{ $order->id }} is currently {{ strtoupper($order->status) }} by the barista. Are you sure you want to override and complete it?"
+                                                @else
+                                                    wire:confirm="Mark Order #{{ $order->id }} as completed?"
+                                                @endif
+                                                class="px-2.5 py-1 bg-[#FAF6F3] border border-[#E8DDD6] text-[#2C211C] rounded-lg text-[10px] font-bold cursor-pointer hover:bg-[#F5EDE7]">
                                             {{ __('cbvh.close_order') }}
                                         </button>
                                     @endif

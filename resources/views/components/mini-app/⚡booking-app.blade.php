@@ -3,6 +3,7 @@
 use Livewire\Component;
 use Livewire\WithFileUploads;
 use Livewire\Attributes\Url;
+use Livewire\Attributes\Locked;
 use App\Models\Branch;
 use App\Models\Room;
 use App\Models\DrinkItem;
@@ -21,6 +22,7 @@ new class extends Component
     #[Url(as: 'tab')]
     public $activeTab = 'drinks'; // 'drinks', 'history'
     public $selectedBranchId;
+    #[Locked]
     public $currentUserId;
 
     // --- Order Mode ---
@@ -336,8 +338,9 @@ new class extends Component
 
     public function startExtendOrder($orderId): void
     {
+        $userId = Auth::id() ?? $this->currentUserId;
         $parent = DrinkOrder::where('id', $orderId)
-            ->where('user_id', $this->currentUserId)
+            ->where('user_id', $userId)
             ->where('status', 'in_delivery')
             ->with('items')
             ->first();
@@ -372,8 +375,9 @@ new class extends Component
 
     public function confirmReceived($orderId): void
     {
+        $userId = Auth::id() ?? $this->currentUserId;
         $order = DrinkOrder::where('id', $orderId)
-            ->where('user_id', $this->currentUserId)
+            ->where('user_id', $userId)
             ->first();
 
         if ($order && $order->status === 'in_delivery') {
@@ -396,6 +400,18 @@ new class extends Component
             return;
         }
 
+        // Validate that room actually belongs to selected branch
+        $roomBelongsToBranch = Room::where('id', $this->selectedRoomId)
+            ->where('branch_id', $this->selectedBranchId)
+            ->where('is_active', true)
+            ->exists();
+        if (!$roomBelongsToBranch) {
+            $this->flashMessage = 'Selected room does not belong to the selected branch.';
+            $this->flashType = 'error';
+            return;
+        }
+
+        $effectiveUserId = Auth::id() ?? $this->currentUserId;
         $totalCups = (int) collect($this->drinkCart)->sum('quantity');
         $branch = Branch::find($this->selectedBranchId);
 
@@ -403,7 +419,10 @@ new class extends Component
         $finalOrderType = $isExtend ? 'extend' : $this->orderType;
 
         if ($isExtend) {
-            $parent = DrinkOrder::with('items')->find($this->extendingOrderId);
+            $parent = DrinkOrder::with('items')
+                ->where('id', $this->extendingOrderId)
+                ->where('user_id', $effectiveUserId)
+                ->first();
             if (!$parent || $parent->status !== 'in_delivery') {
                 $this->flashMessage = 'Original order is no longer in delivery.';
                 $this->flashType = 'error';
@@ -528,7 +547,7 @@ new class extends Component
         }
 
         $order = DrinkOrder::create([
-            'user_id' => $this->currentUserId,
+            'user_id' => $effectiveUserId,
             'branch_id' => $this->selectedBranchId,
             'room_id' => $this->selectedRoomId,
             'order_type' => $finalOrderType,

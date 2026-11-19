@@ -1505,4 +1505,129 @@ class BookingSystemTest extends TestCase
         $this->assertEquals('25% Sweet', $options['Sweetness']['en']);
         $this->assertEquals('ផ្អែមតិច ២៥%', $options['Sweetness']['km']);
     }
+
+    public function test_user_cannot_submit_extend_order_for_another_users_order(): void
+    {
+        $victim = User::factory()->create(['role' => 'employee']);
+        $attacker = User::factory()->create(['role' => 'employee']);
+        $branch = Branch::first();
+        $room = Room::where('branch_id', $branch->id)->first();
+        $drink = DrinkItem::where('branch_id', $branch->id)->first();
+
+        // Victim has an in_delivery order
+        $victimOrder = DrinkOrder::create([
+            'user_id' => $victim->id,
+            'branch_id' => $branch->id,
+            'room_id' => $room->id,
+            'order_type' => 'instant',
+            'status' => 'in_delivery',
+            'in_delivery_at' => now(),
+        ]);
+        DrinkOrderItem::create([
+            'drink_order_id' => $victimOrder->id,
+            'drink_item_id' => $drink->id,
+            'quantity' => 2,
+        ]);
+
+        // Attacker attempts to forge extend against victim's order
+        Livewire::actingAs($attacker)
+            ->test('mini-app.booking-app')
+            ->set('extendingOrderId', $victimOrder->id)
+            ->set('extendReason', 'spilled')
+            ->call('selectDrink', $drink->id)
+            ->call('addToCart')
+            ->call('submitDrinkOrder')
+            ->assertSet('flashType', 'error');
+
+        // Verify victim order was NOT completed by attacker
+        $this->assertEquals('in_delivery', $victimOrder->fresh()->status);
+    }
+
+    public function test_quick_cups_used_today_includes_non_spill_extend_orders(): void
+    {
+        $user = User::factory()->create(['role' => 'employee']);
+        $branch = Branch::first();
+        $room = Room::where('branch_id', $branch->id)->first();
+        $drink = DrinkItem::where('branch_id', $branch->id)->first();
+
+        // 1. Instant order of 3 cups
+        $order1 = DrinkOrder::create([
+            'user_id' => $user->id,
+            'branch_id' => $branch->id,
+            'room_id' => $room->id,
+            'order_type' => 'instant',
+            'status' => 'completed',
+        ]);
+        DrinkOrderItem::create([
+            'drink_order_id' => $order1->id,
+            'drink_item_id' => $drink->id,
+            'quantity' => 3,
+        ]);
+
+        // 2. Extend order with reason = 'extra_guests' of 2 cups
+        $order2 = DrinkOrder::create([
+            'user_id' => $user->id,
+            'branch_id' => $branch->id,
+            'room_id' => $room->id,
+            'order_type' => 'extend',
+            'extend_reason' => 'extra_guests',
+            'parent_order_id' => $order1->id,
+            'status' => 'completed',
+        ]);
+        DrinkOrderItem::create([
+            'drink_order_id' => $order2->id,
+            'drink_item_id' => $drink->id,
+            'quantity' => 2,
+        ]);
+
+        // 3. Extend order with reason = 'spilled' of 1 cup (spill does NOT count)
+        $order3 = DrinkOrder::create([
+            'user_id' => $user->id,
+            'branch_id' => $branch->id,
+            'room_id' => $room->id,
+            'order_type' => 'extend',
+            'extend_reason' => 'spilled',
+            'parent_order_id' => $order1->id,
+            'status' => 'completed',
+        ]);
+        DrinkOrderItem::create([
+            'drink_order_id' => $order3->id,
+            'drink_item_id' => $drink->id,
+            'quantity' => 1,
+        ]);
+
+        // Total should be 3 (instant) + 2 (extra_guests extend) = 5. (Spilled is excluded)
+        $this->assertEquals(5, DrinkOrder::quickCupsUsedToday($user->id));
+    }
+
+    public function test_admin_cannot_demote_themselves_from_admin_role(): void
+    {
+        $admin = User::factory()->create(['role' => 'admin']);
+
+        Livewire::actingAs($admin)
+            ->test('admin.approval-portal')
+            ->call('updateUserRole', $admin->id, 'employee')
+            ->assertSet('flashType', 'error');
+
+        $this->assertEquals('admin', $admin->fresh()->role);
+    }
+
+    public function test_cannot_submit_drink_order_with_mismatched_branch_and_room(): void
+    {
+        $employee = User::factory()->create(['role' => 'employee']);
+        $branch1 = Branch::first();
+        $branch2 = Branch::skip(1)->first() ?? Branch::factory()->create();
+        $roomInBranch2 = Room::where('branch_id', $branch2->id)->first() ?? Room::factory()->create(['branch_id' => $branch2->id]);
+        $drink = DrinkItem::where('branch_id', $branch1->id)->first();
+
+        Livewire::actingAs($employee)
+            ->test('mini-app.booking-app')
+            ->set('selectedBranchId', $branch1->id)
+            ->set('selectedRoomId', $roomInBranch2->id) // Mismatched room!
+            ->call('selectDrink', $drink->id)
+            ->call('addToCart')
+            ->call('submitDrinkOrder')
+            ->assertSet('flashType', 'error')
+            ->assertSet('flashMessage', 'Selected room does not belong to the selected branch.');
+    }
 }

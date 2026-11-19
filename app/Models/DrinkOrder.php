@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Facades\Cache;
 
 class DrinkOrder extends Model
 {
@@ -118,47 +119,49 @@ class DrinkOrder extends Model
      */
     public static function autoCompleteExpiredDeliveries(bool $notifyTelegram = true): int
     {
-        // Auto-cancel stale quick orders from yesterday or earlier that were left unfulfilled
-        static::whereIn('order_type', ['instant', 'extend'])
-            ->whereIn('status', ['approved', 'preparing'])
-            ->whereDate('created_at', '<', today())
-            ->update([
-                'status' => 'rejected_by_barista',
-                'barista_rejection_reason' => 'Auto-expired: unfulfilled on order day',
-            ]);
+        return Cache::lock('drink_auto_complete_lock', 10)->get(function () use ($notifyTelegram) {
+            // Auto-cancel stale quick orders from yesterday or earlier that were left unfulfilled
+            static::whereIn('order_type', ['instant', 'extend'])
+                ->whereIn('status', ['approved', 'preparing'])
+                ->whereDate('created_at', '<', today())
+                ->update([
+                    'status' => 'rejected_by_barista',
+                    'barista_rejection_reason' => 'Auto-expired: unfulfilled on order day',
+                ]);
 
-        $expired = static::with('user')
-            ->where('status', 'in_delivery')
-            ->whereNotNull('in_delivery_at')
-            ->where('in_delivery_at', '<=', now()->subMinutes(10))
-            ->get();
+            $expired = static::with('user')
+                ->where('status', 'in_delivery')
+                ->whereNotNull('in_delivery_at')
+                ->where('in_delivery_at', '<=', now()->subMinutes(10))
+                ->get();
 
-        if ($expired->isEmpty()) {
-            return 0;
-        }
+            if ($expired->isEmpty()) {
+                return 0;
+            }
 
-        $telegram = $notifyTelegram ? app(TelegramService::class) : null;
+            $telegram = $notifyTelegram ? app(TelegramService::class) : null;
 
-        foreach ($expired as $order) {
-            $order->update([
-                'status' => 'completed',
-                'completed_at' => now(),
-                'auto_completed' => true,
-            ]);
+            foreach ($expired as $order) {
+                $order->update([
+                    'status' => 'completed',
+                    'completed_at' => now(),
+                    'auto_completed' => true,
+                ]);
 
-            if ($telegram && $order->user && $order->user->telegram_chat_id) {
-                try {
-                    $telegram->sendMessage(
-                        $order->user->telegram_chat_id,
-                        "✅ <b>Order #{$order->id} Auto-Completed:</b> Marked as delivered after 10 minutes. Need extra drinks or replacement? Open <b>My Orders</b> and tap <b>Order More / Spilled</b>."
-                    );
-                } catch (\Throwable $e) {
-                    // Never block polling if Telegram fails
+                if ($telegram && $order->user && $order->user->telegram_chat_id) {
+                    try {
+                        $telegram->sendMessage(
+                            $order->user->telegram_chat_id,
+                            "✅ <b>Order #{$order->id} Auto-Completed:</b> Marked as delivered after 10 minutes. Need extra drinks or replacement? Open <b>My Orders</b> and tap <b>Order More / Spilled</b>."
+                        );
+                    } catch (\Throwable $e) {
+                        // Never block polling if Telegram fails
+                    }
                 }
             }
-        }
 
-        return $expired->count();
+            return $expired->count();
+        }) ?? 0;
     }
 
     public function totalCups(): int
@@ -167,7 +170,7 @@ class DrinkOrder extends Model
     }
 
     /**
-     * Total Quick Drink ('instant') cups a user has ordered today.
+     * Total Quick Drink ('instant') and non-spill extend cups a user has ordered today.
      */
     public static function quickCupsUsedToday(?int $userId): int
     {
@@ -177,7 +180,11 @@ class DrinkOrder extends Model
 
         return (int) DrinkOrderItem::whereHas('order', function ($query) use ($userId) {
             $query->where('user_id', $userId)
-                ->where('order_type', 'instant')
+                ->whereIn('order_type', ['instant', 'extend'])
+                ->where(function ($q) {
+                    $q->where('order_type', 'instant')
+                        ->orWhere('extend_reason', '!=', 'spilled');
+                })
                 ->where('status', '!=', 'rejected_by_barista')
                 ->whereDate('created_at', today());
         })->sum('quantity');
