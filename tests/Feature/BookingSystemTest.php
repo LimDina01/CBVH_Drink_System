@@ -526,6 +526,7 @@ class BookingSystemTest extends TestCase
             ->set('newName', 'Bopha Meas')
             ->set('newEmployeeId', 'EMP-777')
             ->set('newPassword', 'secret123')
+            ->set('newPassword_confirmation', 'secret123')
             ->set('newBranchId', $hq->id)
             ->set('newRole', 'employee')
             ->call('createStaffAccount')
@@ -935,7 +936,7 @@ class BookingSystemTest extends TestCase
             ->assertSet('orderType', 'meeting');
     }
 
-    public function test_quick_drink_daily_limit_is_10_cups_per_user_while_meeting_has_no_limit(): void
+    public function test_quick_drink_daily_ordering_is_unlimited_per_user(): void
     {
         Carbon::setTestNow(Carbon::create(2026, 11, 12, 10, 0, 0));
 
@@ -944,7 +945,7 @@ class BookingSystemTest extends TestCase
         $admin = User::where('email', 'admin@company.com')->first();
         $drink = DrinkItem::where('branch_id', $hq->id)->first();
 
-        // 1. User orders 6 Quick Drink cups -> succeeds (4 remaining today)
+        // 1. User orders 6 Quick Drink cups -> succeeds
         Livewire::actingAs($hqUser)
             ->test('mini-app.booking-app')
             ->call('setOrderType', 'instant')
@@ -954,29 +955,19 @@ class BookingSystemTest extends TestCase
             ->call('submitDrinkOrder')
             ->assertSet('flashType', 'success');
 
-        // 2. Trying to add 5 more Quick Drink cups (6 + 5 = 11 > 10) is blocked
+        // 2. User orders 5 more Quick Drink cups (6 + 5 = 11 cups) -> succeeds (unlimited)
         Livewire::actingAs($hqUser)
             ->test('mini-app.booking-app')
             ->call('setOrderType', 'instant')
             ->call('selectDrink', $drink->id)
             ->set('drinkQuantity', 5)
             ->call('addToCart')
-            ->assertSet('flashType', 'error')
-            ->assertSet('drinkCart', []);
-
-        // 3. Ordering the remaining 4 Quick Drink cups (6 + 4 = 10) succeeds
-        Livewire::actingAs($hqUser)
-            ->test('mini-app.booking-app')
-            ->call('setOrderType', 'instant')
-            ->call('selectDrink', $drink->id)
-            ->set('drinkQuantity', 4)
-            ->call('addToCart')
             ->call('submitDrinkOrder')
             ->assertSet('flashType', 'success');
 
-        $this->assertSame(10, DrinkOrder::quickCupsUsedToday($hqUser->id));
+        $this->assertSame(11, DrinkOrder::quickCupsUsedToday($hqUser->id));
 
-        // 4. Even at 10/10 Quick cups, the same user can order 15 Meeting Drink cups (no limit)
+        // 3. User can also order 15 Meeting Drink cups
         Livewire::actingAs($hqUser)
             ->test('mini-app.booking-app')
             ->call('setOrderType', 'meeting')
@@ -989,7 +980,7 @@ class BookingSystemTest extends TestCase
             ->call('submitDrinkOrder')
             ->assertSet('flashType', 'success');
 
-        // 5. A different user still has their own 10-cup Quick Drink quota today
+        // 4. A different user has their own separate count
         $this->assertSame(0, DrinkOrder::quickCupsUsedToday($admin->id));
     }
 
@@ -1242,13 +1233,13 @@ class BookingSystemTest extends TestCase
             ->assertSet('orderType', 'instant')
             ->assertViewHas('quickDailyLimit', 50);
 
-        // 4. Employee attempting to add 11 cups in quick order must be blocked
+        // 4. Employee adding 11 cups in quick order succeeds (unlimited daily ordering)
         Livewire::actingAs($employee)
             ->test('mini-app.booking-app')
             ->call('selectDrink', $drink->id)
             ->set('drinkQuantity', 11)
             ->call('addToCart')
-            ->assertSet('flashType', 'error');
+            ->assertSet('flashType', 'success');
 
         // 5. Admin can successfully add 15 cups in quick order
         Livewire::actingAs($admin)
@@ -1651,5 +1642,39 @@ class BookingSystemTest extends TestCase
             ->call('submitDrinkOrder')
             ->assertSet('flashType', 'error')
             ->assertSet('flashMessage', 'Selected room does not belong to the selected branch.');
+    }
+
+    public function test_staff_creation_fails_if_password_confirmation_does_not_match(): void
+    {
+        $admin = User::factory()->create(['role' => 'admin']);
+        $hq = Branch::first();
+
+        Livewire::actingAs($admin)
+            ->test('admin.approval-portal')
+            ->set('newName', 'Mismatched User')
+            ->set('newEmployeeId', 'EMP-MISMATCH')
+            ->set('newPassword', 'password123')
+            ->set('newPassword_confirmation', 'different_password')
+            ->set('newBranchId', $hq->id)
+            ->set('newRole', 'employee')
+            ->call('createStaffAccount')
+            ->assertHasErrors(['newPassword']);
+
+        $this->assertDatabaseMissing('users', ['employee_id' => 'EMP-MISMATCH']);
+    }
+
+    public function test_drink_quantity_can_be_typed_directly_in_cart(): void
+    {
+        $employee = User::factory()->create(['role' => 'employee']);
+        $hq = Branch::where('is_hq', true)->first();
+        $drink = DrinkItem::where('branch_id', $hq->id)->first();
+
+        Livewire::actingAs($employee)
+            ->test('mini-app.booking-app')
+            ->call('selectDrink', $drink->id)
+            ->set('drinkQuantity', 7) // Directly set/typed 7
+            ->call('addToCart')
+            ->assertCount('drinkCart', 1)
+            ->assertSet('drinkCart.0.quantity', 7);
     }
 }

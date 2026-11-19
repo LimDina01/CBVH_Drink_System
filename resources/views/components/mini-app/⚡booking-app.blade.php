@@ -252,38 +252,6 @@ new class extends Component
                     $this->flashType = 'error';
                     return;
                 }
-            } else {
-                // For extra guests or additional drinks on quick orders, enforce daily limit
-                $isParentMeeting = ($parent && $parent->order_type === 'meeting');
-                if (!$isParentMeeting) {
-                    $usedToday = DrinkOrder::quickCupsUsedToday($this->currentUserId);
-                    $limit = DrinkOrder::quickDailyLimitForUser(Auth::user());
-
-                    if (($usedToday + $trayCups + $qty) > $limit) {
-                        $remaining = max(0, $limit - $usedToday - $trayCups);
-                        $this->selectedDrinkId = null;
-                        $this->flashMessage = __('cbvh.quick_daily_limit_exceeded', [
-                            'limit' => $limit,
-                            'remaining' => $remaining,
-                        ]);
-                        $this->flashType = 'error';
-                        return;
-                    }
-                }
-            }
-        } elseif ($this->orderType === 'instant') {
-            $usedToday = DrinkOrder::quickCupsUsedToday($this->currentUserId);
-            $limit = DrinkOrder::quickDailyLimitForUser(Auth::user());
-
-            if (($usedToday + $trayCups + $qty) > $limit) {
-                $remaining = max(0, $limit - $usedToday - $trayCups);
-                $this->selectedDrinkId = null;
-                $this->flashMessage = __('cbvh.quick_daily_limit_exceeded', [
-                    'limit' => $limit,
-                    'remaining' => $remaining,
-                ]);
-                $this->flashType = 'error';
-                return;
             }
         }
 
@@ -440,19 +408,6 @@ new class extends Component
                     $this->flashType = 'error';
                     return;
                 }
-            } else {
-                if ($parent->order_type !== 'meeting') {
-                    $usedToday = DrinkOrder::quickCupsUsedToday($this->currentUserId);
-                    $limit = DrinkOrder::quickDailyLimitForUser(Auth::user());
-                    if (($usedToday + $totalCups) > $limit) {
-                        $this->flashMessage = __('cbvh.quick_daily_limit_exceeded', [
-                            'limit' => $limit,
-                            'remaining' => max(0, $limit - $usedToday),
-                        ]);
-                        $this->flashType = 'error';
-                        return;
-                    }
-                }
             }
 
             $waitMinutes = max(2, $totalCups * 2);
@@ -460,17 +415,6 @@ new class extends Component
         } elseif ($finalOrderType === 'instant') {
             if (!$this->isCurrentUserHq()) {
                 $this->flashMessage = __('cbvh.branch_meeting_only');
-                $this->flashType = 'error';
-                return;
-            }
-
-            $usedToday = DrinkOrder::quickCupsUsedToday($this->currentUserId);
-            $limit = DrinkOrder::quickDailyLimitForUser(Auth::user());
-            if (($usedToday + $totalCups) > $limit) {
-                $this->flashMessage = __('cbvh.quick_daily_limit_exceeded', [
-                    'limit' => $limit,
-                    'remaining' => max(0, $limit - $usedToday),
-                ]);
                 $this->flashType = 'error';
                 return;
             }
@@ -826,8 +770,8 @@ new class extends Component
                                         ⏰ {{ __('cbvh.closed_quick_hours') }}
                                     </div>
                                 @endif
-                                <div class="text-[11px] px-2.5 py-1.5 rounded-xl font-semibold flex items-center justify-between {{ $quickCupsRemaining > 0 ? 'bg-[#FAF6F3] dark:bg-[#1A1412] text-[#835440] dark:text-[#E8CFC1] border border-[#E8DDD6] dark:border-[#3D2F29]' : 'bg-amber-50 border border-amber-200 text-amber-800' }}">
-                                    <span>☕ {{ __('cbvh.quick_daily_remaining', ['remaining' => $quickCupsRemaining, 'limit' => $quickDailyLimit]) }}</span>
+                                <div class="text-[11px] px-2.5 py-1.5 rounded-xl font-semibold flex items-center justify-between bg-[#FAF6F3] dark:bg-[#1A1412] text-[#835440] dark:text-[#E8CFC1] border border-[#E8DDD6] dark:border-[#3D2F29]">
+                                    <span>☕ {{ __('cbvh.quick_daily_unlimited', ['used' => $quickCupsUsedToday]) }}</span>
                                 </div>
                             </div>
                         @else
@@ -1210,10 +1154,10 @@ new class extends Component
 
                     <div class="flex items-center justify-between pt-2 border-t border-[#E8DDD6] dark:border-[#3D2F29]">
                         <span class="text-xs font-bold text-[#2C211C] dark:text-[#F5EDE7]">{{ __('cbvh.quantity') }}</span>
-                        <div class="flex items-center space-x-3">
-                            <button type="button" wire:click="$set('drinkQuantity', {{ max(1, $drinkQuantity - 1) }})" class="w-8 h-8 rounded-full border border-[#E8DDD6] dark:border-[#3D2F29] bg-[#FAF6F3] dark:bg-[#1A1412] flex items-center justify-center font-bold text-base cursor-pointer">-</button>
-                            <span class="font-bold text-sm w-4 text-center">{{ $drinkQuantity }}</span>
-                            <button type="button" wire:click="$set('drinkQuantity', {{ $drinkQuantity + 1 }})" class="w-8 h-8 rounded-full border border-[#E8DDD6] dark:border-[#3D2F29] bg-[#FAF6F3] dark:bg-[#1A1412] flex items-center justify-center font-bold text-base cursor-pointer">+</button>
+                        <div class="flex items-center space-x-2">
+                            <button type="button" wire:click="$set('drinkQuantity', {{ max(1, (int)$drinkQuantity - 1) }})" class="w-8 h-8 rounded-full border border-[#E8DDD6] dark:border-[#3D2F29] bg-[#FAF6F3] dark:bg-[#1A1412] flex items-center justify-center font-bold text-base cursor-pointer hover:bg-[#E8DDD6] transition">-</button>
+                            <input type="number" min="1" max="99" wire:model.live="drinkQuantity" class="w-14 text-center font-black text-sm py-1 rounded-xl border border-[#E8DDD6] dark:border-[#3D2F29] bg-white dark:bg-[#241C19] text-[#2C211C] dark:text-[#F5EDE7] focus:border-[#9E6B55] focus:outline-hidden" />
+                            <button type="button" wire:click="$set('drinkQuantity', {{ (int)$drinkQuantity + 1 }})" class="w-8 h-8 rounded-full border border-[#E8DDD6] dark:border-[#3D2F29] bg-[#FAF6F3] dark:bg-[#1A1412] flex items-center justify-center font-bold text-base cursor-pointer hover:bg-[#E8DDD6] transition">+</button>
                         </div>
                     </div>
 

@@ -57,6 +57,7 @@ new class extends Component
     public string $newName = '';
     public string $newEmployeeId = '';
     public string $newPassword = '';
+    public string $newPassword_confirmation = '';
     public string $newRole = 'employee';
     public $newBranchId = null;
 
@@ -135,9 +136,13 @@ new class extends Component
         $this->validate([
             'newName' => 'required|min:2',
             'newEmployeeId' => 'required|min:2|unique:users,employee_id',
-            'newPassword' => 'required|min:4',
+            'newPassword' => 'required|min:4|same:newPassword_confirmation',
+            'newPassword_confirmation' => 'required',
             'newRole' => 'required|in:employee,barista,admin',
             'newBranchId' => 'required|exists:branches,id',
+        ], [
+            'newPassword.same' => 'The passwords do not match.',
+            'newPassword_confirmation.required' => 'Please confirm the password.',
         ]);
 
         $cleanEmpId = strtoupper(trim($this->newEmployeeId));
@@ -155,6 +160,7 @@ new class extends Component
         $this->newName = '';
         $this->newEmployeeId = '';
         $this->newPassword = '';
+        $this->newPassword_confirmation = '';
         $this->flashMessage = "Staff account created for {$cleanEmpId}! They can now sign in with this Employee ID.";
         $this->flashType = 'success';
     }
@@ -1407,31 +1413,59 @@ new class extends Component
                     <!-- Create Staff Account Card -->
                     <div class="bg-white dark:bg-[#241C19] rounded-2xl border border-[#E8DDD6] dark:border-[#3D2F29] p-5 shadow-2xs space-y-3">
                         <h2 class="font-bold text-sm">➕ {{ __('cbvh.add_staff') }}</h2>
-                        <form wire:submit="createStaffAccount" class="grid grid-cols-1 sm:grid-cols-5 gap-2.5">
-                            <input type="text" wire:model="newName" placeholder="{{ __('cbvh.full_name') }}" required
-                                   class="text-xs p-2.5 rounded-xl border border-[#E8DDD6] bg-[#FAF6F3]" />
-                            <input type="text" wire:model="newEmployeeId" placeholder="{{ __('cbvh.employee_id') }} (e.g. A100888)" required
-                                   class="text-xs p-2.5 rounded-xl border border-[#E8DDD6] bg-[#FAF6F3]" />
-                            <input type="password" wire:model="newPassword" placeholder="{{ __('cbvh.password') }}" required
-                                   class="text-xs p-2.5 rounded-xl border border-[#E8DDD6] bg-[#FAF6F3]" />
-                            <select wire:model="newBranchId" class="text-xs p-2.5 rounded-xl border border-[#E8DDD6] bg-[#FAF6F3] font-semibold">
-                                @foreach($branches as $b)
-                                    <option value="{{ $b->id }}">{{ $b->code }} {{ $b->is_hq ? '(HQ)' : '' }}</option>
-                                @endforeach
-                            </select>
+                        <form wire:submit="createStaffAccount" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                            <div>
+                                <input type="text" wire:model="newName" placeholder="{{ __('cbvh.full_name') }}" required
+                                       class="w-full text-xs p-2.5 rounded-xl border border-[#E8DDD6] dark:border-[#3D2F29] bg-[#FAF6F3] dark:bg-[#1A1412] text-[#2C211C] dark:text-[#F5EDE7]" />
+                                @error('newName') <span class="text-[11px] text-rose-500 mt-0.5 block">{{ $message }}</span> @enderror
+                            </div>
+
+                            <div>
+                                <input type="text" wire:model="newEmployeeId" placeholder="{{ __('cbvh.employee_id') }} (e.g. A100888)" required
+                                       class="w-full text-xs p-2.5 rounded-xl border border-[#E8DDD6] dark:border-[#3D2F29] bg-[#FAF6F3] dark:bg-[#1A1412] text-[#2C211C] dark:text-[#F5EDE7] uppercase" />
+                                @error('newEmployeeId') <span class="text-[11px] text-rose-500 mt-0.5 block">{{ $message }}</span> @enderror
+                            </div>
+
+                            <div>
+                                <select wire:model="newBranchId" class="w-full text-xs p-2.5 rounded-xl border border-[#E8DDD6] dark:border-[#3D2F29] bg-[#FAF6F3] dark:bg-[#1A1412] text-[#2C211C] dark:text-[#F5EDE7] font-semibold cursor-pointer">
+                                    @foreach($branches as $b)
+                                        <option value="{{ $b->id }}">{{ $b->name }} {{ $b->is_hq ? '(HQ)' : '' }}</option>
+                                    @endforeach
+                                </select>
+                                @error('newBranchId') <span class="text-[11px] text-rose-500 mt-0.5 block">{{ $message }}</span> @enderror
+                            </div>
+
+                            <div class="relative" x-data="{ showPass: false }">
+                                <input :type="showPass ? 'text' : 'password'" wire:model="newPassword" placeholder="{{ __('cbvh.password') }}" required minlength="4"
+                                       class="w-full text-xs pl-2.5 pr-8 py-2.5 rounded-xl border border-[#E8DDD6] dark:border-[#3D2F29] bg-[#FAF6F3] dark:bg-[#1A1412] text-[#2C211C] dark:text-[#F5EDE7]" />
+                                <button type="button" @click="showPass = !showPass" class="absolute right-2 top-1/2 -translate-y-1/2 text-xs p-1 text-[#7C6A60] cursor-pointer">
+                                    <span x-show="!showPass">👁️</span>
+                                    <span x-show="showPass" x-cloak>🙈</span>
+                                </button>
+                                @error('newPassword') <span class="text-[11px] text-rose-500 mt-0.5 block">{{ $message }}</span> @enderror
+                            </div>
+
+                            <div class="relative" x-data="{ showPassConf: false }">
+                                <input :type="showPassConf ? 'text' : 'password'" wire:model="newPassword_confirmation" placeholder="Confirm Password" required minlength="4"
+                                       class="w-full text-xs pl-2.5 pr-8 py-2.5 rounded-xl border border-[#E8DDD6] dark:border-[#3D2F29] bg-[#FAF6F3] dark:bg-[#1A1412] text-[#2C211C] dark:text-[#F5EDE7]" />
+                                <button type="button" @click="showPassConf = !showPassConf" class="absolute right-2 top-1/2 -translate-y-1/2 text-xs p-1 text-[#7C6A60] cursor-pointer">
+                                    <span x-show="!showPassConf">👁️</span>
+                                    <span x-show="showPassConf" x-cloak>🙈</span>
+                                </button>
+                                @error('newPassword_confirmation') <span class="text-[11px] text-rose-500 mt-0.5 block">{{ $message }}</span> @enderror
+                            </div>
+
                             <div class="flex space-x-1.5">
-                                <select wire:model="newRole" class="w-full text-xs p-2.5 rounded-xl border border-[#E8DDD6] bg-[#FAF6F3] font-semibold">
+                                <select wire:model="newRole" class="w-full text-xs p-2.5 rounded-xl border border-[#E8DDD6] dark:border-[#3D2F29] bg-[#FAF6F3] dark:bg-[#1A1412] text-[#2C211C] dark:text-[#F5EDE7] font-semibold cursor-pointer">
                                     <option value="employee">Staff</option>
                                     <option value="barista">Barista</option>
                                     <option value="admin">Admin</option>
                                 </select>
-                                <button type="submit" class="px-3.5 py-2.5 bg-[#9E6B55] hover:bg-[#835440] text-white text-xs font-bold rounded-xl shrink-0 cursor-pointer">
+                                <button type="submit" class="px-5 py-2.5 bg-[#9E6B55] hover:bg-[#835440] text-white text-xs font-bold rounded-xl shrink-0 cursor-pointer shadow-xs transition">
                                     Add
                                 </button>
                             </div>
                         </form>
-                        @error('newEmployeeId') <span class="text-xs text-rose-500">{{ $message }}</span> @enderror
-                        @error('newPassword') <span class="text-xs text-rose-500">{{ $message }}</span> @enderror
                     </div>
 
                     <!-- Staff Directory -->
@@ -2084,12 +2118,18 @@ new class extends Component
                 </div>
 
                 <form wire:submit="saveNewPassword" class="space-y-3 pt-2">
-                    <div>
+                    <div x-data="{ showResetPass: true }">
                         <label class="block text-xs font-semibold text-[#7C6A60] dark:text-[#BBA79D] mb-1">
                             {{ __('cbvh.new_password') }}
                         </label>
-                        <input type="text" wire:model="newStaffResetPassword" required minlength="4"
-                               class="w-full text-xs p-2.5 rounded-xl border border-[#E8DDD6] dark:border-[#3D2F29] bg-[#FAF6F3] dark:bg-[#1A1412] text-[#2C211C] dark:text-[#F5EDE7] font-mono focus:border-[#9E6B55] focus:outline-hidden" />
+                        <div class="relative">
+                            <input :type="showResetPass ? 'text' : 'password'" wire:model="newStaffResetPassword" required minlength="4"
+                                   class="w-full text-xs pl-2.5 pr-8 py-2.5 rounded-xl border border-[#E8DDD6] dark:border-[#3D2F29] bg-[#FAF6F3] dark:bg-[#1A1412] text-[#2C211C] dark:text-[#F5EDE7] font-mono focus:border-[#9E6B55] focus:outline-hidden" />
+                            <button type="button" @click="showResetPass = !showResetPass" class="absolute right-2 top-1/2 -translate-y-1/2 text-xs p-1 text-[#7C6A60] cursor-pointer">
+                                <span x-show="!showResetPass">👁️</span>
+                                <span x-show="showResetPass" x-cloak>🙈</span>
+                            </button>
+                        </div>
                         @error('newStaffResetPassword') <span class="text-xs text-rose-500 mt-1 block">{{ $message }}</span> @enderror
                     </div>
 

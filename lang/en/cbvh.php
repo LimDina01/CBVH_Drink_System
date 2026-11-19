@@ -69,6 +69,7 @@ return [
     'quick_time_past' => 'Please choose a future time later today (8:00 AM – 5:00 PM).',
     'quick_auto_guests' => 'Guest count automatically matches number of cups.',
     'quick_daily_remaining' => 'Daily Quick Limit: :remaining / :limit cups left today',
+    'quick_daily_unlimited' => 'Quick Drinks Today: :used cups (Unlimited)',
     'quick_daily_limit_exceeded' => 'Quick Drink limit is :limit cups per day (:remaining left today). Use Meeting Drink for larger orders.',
     'meeting_datetime' => 'Meeting Date & Time',
     'earliest' => 'Earliest',

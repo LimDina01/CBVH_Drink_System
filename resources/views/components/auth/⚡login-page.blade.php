@@ -139,10 +139,16 @@ new class extends Component
                 @error('loginId') <span class="text-[11px] text-rose-500 mt-1 block">{{ $message }}</span> @enderror
             </div>
 
-            <div>
+            <div x-data="{ showPass: false }">
                 <label class="block text-xs font-semibold text-[#7C6A60] dark:text-[#BBA79D] mb-1.5">{{ __('cbvh.password') }}</label>
-                <input type="password" wire:model="password" required placeholder="••••••••"
-                       class="w-full text-sm px-4 py-3 rounded-xl border border-[#E8DDD6] dark:border-[#3D2F29] bg-[#FAF6F3] dark:bg-[#1A1412] text-[#2C211C] dark:text-[#F5EDE7] focus:border-[#9E6B55] focus:outline-hidden" />
+                <div class="relative">
+                    <input :type="showPass ? 'text' : 'password'" wire:model="password" required placeholder="••••••••"
+                           class="w-full text-sm pl-4 pr-11 py-3 rounded-xl border border-[#E8DDD6] dark:border-[#3D2F29] bg-[#FAF6F3] dark:bg-[#1A1412] text-[#2C211C] dark:text-[#F5EDE7] focus:border-[#9E6B55] focus:outline-hidden" />
+                    <button type="button" @click="showPass = !showPass" class="absolute right-3 top-1/2 -translate-y-1/2 text-[#7C6A60] hover:text-[#9E6B55] text-sm p-1 cursor-pointer">
+                        <span x-show="!showPass">👁️</span>
+                        <span x-show="showPass" x-cloak>🙈</span>
+                    </button>
+                </div>
                 @error('password') <span class="text-[11px] text-rose-500 mt-1 block">{{ $message }}</span> @enderror
                 <p class="text-[11px] text-[#7C6A60] dark:text-[#BBA79D] mt-1.5 leading-tight">
                     💡 {{ __('cbvh.forgot_password_hint') }}
