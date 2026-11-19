@@ -176,7 +176,7 @@ return [
     'admin_title' => 'CBVH Drink System — Admin & Reports',
     'admin_subtitle' => 'Live order tracking, attachments, filtered reports & CSV export',
     'tab_tracking_reports' => 'Tracking & Reports',
-    'tab_team_bot' => 'Team, Staff & Bot Setup',
+    'tab_team_bot' => 'Staff Setup',
     'total_orders' => 'Total Orders',
     'total_cups' => 'Total Cups',
     'from_date' => 'From Date',
