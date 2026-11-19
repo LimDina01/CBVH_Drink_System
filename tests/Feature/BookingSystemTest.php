@@ -1706,12 +1706,17 @@ class BookingSystemTest extends TestCase
         $component->call('prefillScheduleWorkingDays', false); // Mon-Fri
         $this->assertTrue($schedule->dates()->count() > 15);
 
-        // Test adding drink to package
-        $component->set('newScheduleDrinkId', $drink->id)
-            ->set('newScheduleQuantity', 10)
-            ->set('newScheduleSugar', 'Less Sugar')
-            ->set('newScheduleIce', 'Normal Ice')
-            ->call('addDrinkToRecurringSchedule');
+        // Test updating drink package and saving
+        $component->set('scheduleItems', [
+            [
+                'id' => null,
+                'drink_item_id' => $drink->id,
+                'name' => $drink->name,
+                'quantity' => 10,
+                'sugar_level' => 'Less Sugar',
+                'ice_level' => 'Normal Ice',
+            ]
+        ])->call('saveRecurringSchedule');
 
         $this->assertDatabaseHas('recurring_schedule_items', [
             'recurring_schedule_id' => $schedule->id,
@@ -1719,6 +1724,13 @@ class BookingSystemTest extends TestCase
             'quantity' => 10,
             'sugar_level' => 'Less Sugar',
         ]);
+
+        // Verify re-mounting component retains the saved drink package
+        $newComponent = \Livewire\Livewire::actingAs($admin)->test('admin.⚡approval-portal');
+        $items = $newComponent->get('scheduleItems');
+        $this->assertCount(1, $items);
+        $this->assertEquals($drink->id, $items[0]['drink_item_id']);
+        $this->assertEquals(10, $items[0]['quantity']);
     }
 
     public function test_recurring_order_auto_dispatch_creates_barista_ticket_and_is_idempotent(): void

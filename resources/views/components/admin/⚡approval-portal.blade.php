@@ -905,11 +905,65 @@ new class extends Component
                 'id' => $item->id,
                 'drink_item_id' => $item->drink_item_id,
                 'name' => $item->drinkItem ? $item->drinkItem->name : 'Unknown Drink',
-                'quantity' => $item->quantity,
-                'sugar_level' => $item->sugar_level,
-                'ice_level' => $item->ice_level,
+                'quantity' => (int) $item->quantity,
+                'sugar_level' => $item->sugar_level ?? 'Normal Sugar',
+                'ice_level' => $item->ice_level ?? 'Normal Ice',
             ];
         })->toArray();
+
+        if (empty($this->scheduleItems)) {
+            $firstDrink = DrinkItem::where('branch_id', $schedule->branch_id)
+                ->where('is_available', true)
+                ->first() ?? DrinkItem::where('is_available', true)->first() ?? DrinkItem::first();
+
+            $this->scheduleItems[] = [
+                'id' => null,
+                'drink_item_id' => $firstDrink ? $firstDrink->id : null,
+                'name' => $firstDrink ? $firstDrink->name : '',
+                'quantity' => 10,
+                'sugar_level' => 'Normal Sugar',
+                'ice_level' => 'Normal Ice',
+            ];
+        }
+    }
+
+    public function addScheduleItemRow(): void
+    {
+        $firstDrink = DrinkItem::where('branch_id', $this->scheduleBranchId)
+            ->where('is_available', true)
+            ->first() ?? DrinkItem::where('is_available', true)->first() ?? DrinkItem::first();
+
+        $this->scheduleItems[] = [
+            'id' => null,
+            'drink_item_id' => $firstDrink ? $firstDrink->id : null,
+            'name' => $firstDrink ? $firstDrink->name : '',
+            'quantity' => 10,
+            'sugar_level' => 'Normal Sugar',
+            'ice_level' => 'Normal Ice',
+        ];
+    }
+
+    public function removeScheduleItemRow(int $index): void
+    {
+        unset($this->scheduleItems[$index]);
+        $this->scheduleItems = array_values($this->scheduleItems);
+        if (empty($this->scheduleItems)) {
+            $this->addScheduleItemRow();
+        }
+    }
+
+    public function updatedScheduleItems($value, $key): void
+    {
+        if (str_ends_with($key, 'drink_item_id')) {
+            $parts = explode('.', $key);
+            $index = (int) $parts[0];
+            if (isset($this->scheduleItems[$index])) {
+                $drink = DrinkItem::find($value);
+                if ($drink) {
+                    $this->scheduleItems[$index]['name'] = $drink->name;
+                }
+            }
+        }
     }
 
     public function prevMonth(): void
@@ -964,38 +1018,6 @@ new class extends Component
         $this->flashType = 'info';
     }
 
-    public function addDrinkToRecurringSchedule(): void
-    {
-        if (!$this->newScheduleDrinkId || $this->newScheduleQuantity < 1) return;
-
-        $schedule = RecurringSchedule::find($this->scheduleId);
-        if (!$schedule) return;
-
-        RecurringScheduleItem::create([
-            'recurring_schedule_id' => $schedule->id,
-            'drink_item_id' => $this->newScheduleDrinkId,
-            'quantity' => $this->newScheduleQuantity,
-            'sugar_level' => $this->newScheduleSugar,
-            'ice_level' => $this->newScheduleIce,
-        ]);
-
-        $this->syncScheduleItemsArray($schedule);
-        $this->flashMessage = "Added drink to daily package.";
-        $this->flashType = 'success';
-    }
-
-    public function removeDrinkFromRecurringSchedule(int $itemId): void
-    {
-        RecurringScheduleItem::where('id', $itemId)
-            ->where('recurring_schedule_id', $this->scheduleId)
-            ->delete();
-
-        $schedule = RecurringSchedule::find($this->scheduleId);
-        if ($schedule) {
-            $this->syncScheduleItemsArray($schedule);
-        }
-    }
-
     public function saveRecurringSchedule(): void
     {
         $schedule = RecurringSchedule::find($this->scheduleId);
@@ -1010,6 +1032,24 @@ new class extends Component
             'is_active' => $this->scheduleIsActive,
             'notes' => $this->scheduleNotes,
         ]);
+
+        // Save items directly from the scheduleItems array
+        $schedule->items()->delete();
+        foreach ($this->scheduleItems as $it) {
+            $drinkId = $it['drink_item_id'] ?? null;
+            $qty = (int) ($it['quantity'] ?? 0);
+            if ($drinkId && $qty > 0) {
+                RecurringScheduleItem::create([
+                    'recurring_schedule_id' => $schedule->id,
+                    'drink_item_id' => $drinkId,
+                    'quantity' => $qty,
+                    'sugar_level' => $it['sugar_level'] ?? 'Normal Sugar',
+                    'ice_level' => $it['ice_level'] ?? 'Normal Ice',
+                ]);
+            }
+        }
+
+        $this->syncScheduleItemsArray($schedule);
 
         $this->flashMessage = __('cbvh.schedule_saved');
         $this->flashType = 'success';
@@ -1029,12 +1069,18 @@ new class extends Component
 
     public function updatedScheduleBranchId($value): void
     {
-        $firstDrink = DrinkItem::where('branch_id', $value)
+        $branchDrinks = DrinkItem::where('branch_id', $value)
             ->where('is_available', true)
-            ->first();
-        if ($firstDrink) {
-            $this->newScheduleDrinkId = $firstDrink->id;
+            ->get();
+
+        $defaultDrinkId = $branchDrinks->first()?->id;
+
+        foreach ($this->scheduleItems as &$it) {
+            if (!$branchDrinks->contains('id', $it['drink_item_id'])) {
+                $it['drink_item_id'] = $defaultDrinkId;
+            }
         }
+        unset($it);
     }
 
     public function with()
@@ -1163,15 +1209,20 @@ new class extends Component
         }
 
         $activeDaysThisMonth = $monthScheduledDates->whereIn('status', ['scheduled', 'generated'])->count();
-        $dailyCups = $this->scheduleId
-            ? (int) RecurringScheduleItem::where('recurring_schedule_id', $this->scheduleId)->sum('quantity')
-            : 0;
+        $dailyCups = array_sum(array_column($this->scheduleItems, 'quantity'));
         $totalMonthCups = $activeDaysThisMonth * $dailyCups;
 
-        $drinksQuery = DrinkItem::where('is_available', true);
+        $selectedDrinkIds = array_filter(array_column($this->scheduleItems, 'drink_item_id'));
+        $drinksQuery = DrinkItem::query();
         if ($this->scheduleBranchId) {
             $drinksQuery->where('branch_id', $this->scheduleBranchId);
         }
+        $drinksQuery->where(function ($q) use ($selectedDrinkIds) {
+            $q->where('is_available', true);
+            if (!empty($selectedDrinkIds)) {
+                $q->orWhereIn('id', $selectedDrinkIds);
+            }
+        });
         $allAvailableDrinks = $drinksQuery->orderBy('name')->get()->unique('name')->values();
         if ($allAvailableDrinks->isEmpty()) {
             $allAvailableDrinks = DrinkItem::where('is_available', true)->orderBy('name')->get()->unique('name')->values();
@@ -2108,161 +2159,158 @@ new class extends Component
 
             <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
                 <!-- Left: Schedule Info & Daily Basket (5 cols) -->
-                <div class="lg:col-span-5 space-y-6">
-                    <!-- Schedule Settings Card -->
-                    <div class="bg-white dark:bg-[#241C19] rounded-2xl border border-[#E8DDD6] dark:border-[#3D2F29] p-5 shadow-2xs space-y-4">
-                        <div class="flex items-center justify-between border-b border-[#E8DDD6] dark:border-[#3D2F29] pb-3">
-                            <h2 class="font-bold text-sm text-[#2C211C] dark:text-[#F5EDE7] flex items-center gap-2">
-                                <span>⚙️</span> {{ __('cbvh.recurring_schedule') }}
-                            </h2>
-                            <label class="inline-flex items-center gap-2 cursor-pointer text-xs font-semibold">
-                                <input type="checkbox" wire:model="scheduleIsActive" class="w-4 h-4 text-[#9E6B55] rounded-sm border-[#E8DDD6] focus:ring-[#9E6B55]" />
-                                <span class="{{ $scheduleIsActive ? 'text-emerald-600 font-bold' : 'text-[#7C6A60]' }}">
-                                    {{ $scheduleIsActive ? '🟢 Active' : '⏸️ Paused' }}
-                                </span>
-                            </label>
-                        </div>
-
-                        <form wire:submit="saveRecurringSchedule" class="space-y-3">
-                            <div>
-                                <label class="block text-[11px] font-bold text-[#7C6A60] dark:text-[#BBA79D] mb-1">
-                                    Schedule Title
-                                </label>
-                                <input type="text" wire:model="scheduleTitle" required
-                                       class="w-full text-xs p-2.5 rounded-xl border border-[#E8DDD6] dark:border-[#3D2F29] bg-[#FAF6F3] dark:bg-[#1A1412] text-[#2C211C] dark:text-[#F5EDE7] font-semibold" />
-                            </div>
-
-                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                                <div>
-                                    <label class="block text-[11px] font-bold text-[#7C6A60] dark:text-[#BBA79D] mb-1">
-                                        {{ __('cbvh.branch') }}
-                                    </label>
-                                    <select wire:model.live="scheduleBranchId" class="w-full text-xs p-2.5 rounded-xl border border-[#E8DDD6] dark:border-[#3D2F29] bg-[#FAF6F3] dark:bg-[#1A1412] text-[#2C211C] dark:text-[#F5EDE7] font-semibold cursor-pointer">
-                                        @foreach($branches as $b)
-                                            <option value="{{ $b->id }}">{{ $b->name }} {{ $b->is_hq ? '(HQ)' : '' }}</option>
-                                        @endforeach
-                                    </select>
-                                </div>
-
-                                <div>
-                                    <label class="block text-[11px] font-bold text-[#7C6A60] dark:text-[#BBA79D] mb-1">
-                                        {{ __('cbvh.delivery_time') }}
-                                    </label>
-                                    <input type="time" wire:model="scheduleDeliveryTime" required
-                                           class="w-full text-xs p-2.5 rounded-xl border border-[#E8DDD6] dark:border-[#3D2F29] bg-[#FAF6F3] dark:bg-[#1A1412] text-[#2C211C] dark:text-[#F5EDE7] font-bold" />
-                                </div>
-                            </div>
-
-                            <div>
-                                <label class="block text-[11px] font-bold text-[#7C6A60] dark:text-[#BBA79D] mb-1">
-                                    {{ __('cbvh.location_detail') }}
-                                </label>
-                                <input type="text" wire:model="scheduleLocationDetail" placeholder="Leave blank for branch or enter floor/room (e.g. 2nd Floor Executive)"
-                                       class="w-full text-xs p-2.5 rounded-xl border border-[#E8DDD6] dark:border-[#3D2F29] bg-[#FAF6F3] dark:bg-[#1A1412] text-[#2C211C] dark:text-[#F5EDE7]" />
-                                <span class="text-[10px] text-[#7C6A60] dark:text-[#BBA79D] mt-0.5 block">Default is blank (delivers to Branch). Specify exact floor/room if needed.</span>
-                            </div>
-
-                            <div>
-                                <label class="block text-[11px] font-bold text-[#7C6A60] dark:text-[#BBA79D] mb-1">
-                                    {{ __('cbvh.notes') }}
-                                </label>
-                                <input type="text" wire:model="scheduleNotes" placeholder="Special standing instructions for barista..."
-                                       class="w-full text-xs p-2.5 rounded-xl border border-[#E8DDD6] dark:border-[#3D2F29] bg-[#FAF6F3] dark:bg-[#1A1412] text-[#2C211C] dark:text-[#F5EDE7]" />
-                            </div>
-
-                            <div class="space-y-1.5 pt-1">
-                                <button type="submit" class="w-full py-2.5 bg-[#9E6B55] hover:bg-[#835440] text-white font-bold text-xs rounded-xl shadow-xs transition cursor-pointer flex items-center justify-center gap-1.5">
-                                    <span wire:loading.remove wire:target="saveRecurringSchedule">💾 {{ __('cbvh.save_schedule') }}</span>
-                                    <span wire:loading wire:target="saveRecurringSchedule">⏳ Saving to Database...</span>
-                                </button>
-                                @if($currentSavedSchedule)
-                                    <div class="text-[10px] text-center text-emerald-600 dark:text-emerald-400 font-bold flex items-center justify-center gap-1">
-                                        <span>✓ Saved in database</span>
-                                        <span class="opacity-75">({{ $currentSavedSchedule->updated_at->format('d/M/Y h:i A') }})</span>
-                                    </div>
-                                @endif
-                            </div>
-                        </form>
-                    </div>
-
-                    <!-- Daily Drinks Package Card -->
-                    <div class="bg-white dark:bg-[#241C19] rounded-2xl border border-[#E8DDD6] dark:border-[#3D2F29] p-5 shadow-2xs space-y-4">
-                        <div class="flex items-center justify-between border-b border-[#E8DDD6] dark:border-[#3D2F29] pb-3">
-                            <div>
+                <div class="lg:col-span-5">
+                    <form wire:submit="saveRecurringSchedule" class="space-y-6">
+                        <!-- Schedule Settings Card -->
+                        <div class="bg-white dark:bg-[#241C19] rounded-2xl border border-[#E8DDD6] dark:border-[#3D2F29] p-5 shadow-2xs space-y-4">
+                            <div class="flex items-center justify-between border-b border-[#E8DDD6] dark:border-[#3D2F29] pb-3">
                                 <h2 class="font-bold text-sm text-[#2C211C] dark:text-[#F5EDE7] flex items-center gap-2">
-                                    <span>☕</span> {{ __('cbvh.daily_drinks_package') }}
+                                    <span>⚙️</span> {{ __('cbvh.recurring_schedule') }}
                                 </h2>
-                                <p class="text-[11px] text-[#7C6A60] dark:text-[#BBA79D]">Daily batch prepared for this schedule</p>
+                                <label class="inline-flex items-center gap-2 cursor-pointer text-xs font-semibold">
+                                    <input type="checkbox" wire:model="scheduleIsActive" class="w-4 h-4 text-[#9E6B55] rounded-sm border-[#E8DDD6] focus:ring-[#9E6B55]" />
+                                    <span class="{{ $scheduleIsActive ? 'text-emerald-600 font-bold' : 'text-[#7C6A60]' }}">
+                                        {{ $scheduleIsActive ? '🟢 Active' : '⏸️ Paused' }}
+                                    </span>
+                                </label>
                             </div>
-                            <span class="px-2.5 py-1 rounded-xl bg-[#FAF6F3] dark:bg-[#1A1412] border border-[#E8DDD6] dark:border-[#3D2F29] text-xs font-black text-[#9E6B55]">
-                                {{ $dailyCups }} cups / day
-                            </span>
+
+                            <div class="space-y-3">
+                                <div>
+                                    <label class="block text-[11px] font-bold text-[#7C6A60] dark:text-[#BBA79D] mb-1">
+                                        Schedule Title
+                                    </label>
+                                    <input type="text" wire:model="scheduleTitle" required
+                                           class="w-full text-xs p-2.5 rounded-xl border border-[#E8DDD6] dark:border-[#3D2F29] bg-[#FAF6F3] dark:bg-[#1A1412] text-[#2C211C] dark:text-[#F5EDE7] font-semibold" />
+                                </div>
+
+                                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                                    <div>
+                                        <label class="block text-[11px] font-bold text-[#7C6A60] dark:text-[#BBA79D] mb-1">
+                                            {{ __('cbvh.branch') }}
+                                        </label>
+                                        <select wire:model.live="scheduleBranchId" class="w-full text-xs p-2.5 rounded-xl border border-[#E8DDD6] dark:border-[#3D2F29] bg-[#FAF6F3] dark:bg-[#1A1412] text-[#2C211C] dark:text-[#F5EDE7] font-semibold cursor-pointer">
+                                            @foreach($branches as $b)
+                                                <option value="{{ $b->id }}">{{ $b->name }} {{ $b->is_hq ? '(HQ)' : '' }}</option>
+                                            @endforeach
+                                        </select>
+                                    </div>
+
+                                    <div>
+                                        <label class="block text-[11px] font-bold text-[#7C6A60] dark:text-[#BBA79D] mb-1">
+                                            {{ __('cbvh.delivery_time') }}
+                                        </label>
+                                        <input type="time" wire:model="scheduleDeliveryTime" required
+                                               class="w-full text-xs p-2.5 rounded-xl border border-[#E8DDD6] dark:border-[#3D2F29] bg-[#FAF6F3] dark:bg-[#1A1412] text-[#2C211C] dark:text-[#F5EDE7] font-bold" />
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label class="block text-[11px] font-bold text-[#7C6A60] dark:text-[#BBA79D] mb-1">
+                                        {{ __('cbvh.location_detail') }}
+                                    </label>
+                                    <input type="text" wire:model="scheduleLocationDetail" placeholder="Leave blank for branch or enter floor/room (e.g. 2nd Floor Executive)"
+                                           class="w-full text-xs p-2.5 rounded-xl border border-[#E8DDD6] dark:border-[#3D2F29] bg-[#FAF6F3] dark:bg-[#1A1412] text-[#2C211C] dark:text-[#F5EDE7]" />
+                                    <span class="text-[10px] text-[#7C6A60] dark:text-[#BBA79D] mt-0.5 block">Default is blank (delivers to Branch). Specify exact floor/room if needed.</span>
+                                </div>
+
+                                <div>
+                                    <label class="block text-[11px] font-bold text-[#7C6A60] dark:text-[#BBA79D] mb-1">
+                                        {{ __('cbvh.notes') }}
+                                    </label>
+                                    <input type="text" wire:model="scheduleNotes" placeholder="Special standing instructions for barista..."
+                                           class="w-full text-xs p-2.5 rounded-xl border border-[#E8DDD6] dark:border-[#3D2F29] bg-[#FAF6F3] dark:bg-[#1A1412] text-[#2C211C] dark:text-[#F5EDE7]" />
+                                </div>
+                            </div>
                         </div>
 
-                        <!-- Current Items in Basket -->
-                        <div class="space-y-2">
-                            @forelse($scheduleItems as $idx => $sItem)
-                                <div class="flex items-center justify-between p-3 rounded-xl bg-[#FAF6F3] dark:bg-[#1A1412] border border-[#E8DDD6] dark:border-[#3D2F29]">
-                                    <div>
-                                        <div class="text-xs font-black text-[#2C211C] dark:text-[#F5EDE7]">
-                                            {{ $sItem['quantity'] }}x {{ $sItem['name'] }}
+                        <!-- Daily Drinks Package Card -->
+                        <div class="bg-white dark:bg-[#241C19] rounded-2xl border border-[#E8DDD6] dark:border-[#3D2F29] p-5 shadow-2xs space-y-4">
+                            <div class="flex items-center justify-between border-b border-[#E8DDD6] dark:border-[#3D2F29] pb-3">
+                                <div>
+                                    <h2 class="font-bold text-sm text-[#2C211C] dark:text-[#F5EDE7] flex items-center gap-2">
+                                        <span>☕</span> {{ __('cbvh.daily_drinks_package') }}
+                                    </h2>
+                                    <p class="text-[11px] text-[#7C6A60] dark:text-[#BBA79D]">Daily batch prepared for this schedule</p>
+                                </div>
+                                <span class="px-2.5 py-1 rounded-xl bg-[#FAF6F3] dark:bg-[#1A1412] border border-[#E8DDD6] dark:border-[#3D2F29] text-xs font-black text-[#9E6B55]">
+                                    {{ $dailyCups }} cups / day
+                                </span>
+                            </div>
+
+                            <!-- List of Editable Drink Rows in Package -->
+                            <div class="space-y-3">
+                                @foreach($scheduleItems as $idx => $sItem)
+                                    <div wire:key="schedule-row-{{ $idx }}" class="p-3.5 rounded-xl bg-[#FAF6F3] dark:bg-[#1A1412] border border-[#E8DDD6] dark:border-[#3D2F29] space-y-2.5">
+                                        <div class="flex items-center justify-between gap-2">
+                                            <div class="flex items-center gap-2 flex-1">
+                                                <span class="text-xs font-bold text-[#7C6A60] dark:text-[#BBA79D]">#{{ $idx + 1 }}</span>
+                                                <select wire:model.live="scheduleItems.{{ $idx }}.drink_item_id"
+                                                        class="w-full text-xs font-bold p-2 rounded-xl border border-[#E8DDD6] dark:border-[#3D2F29] bg-white dark:bg-[#241C19] text-[#2C211C] dark:text-[#F5EDE7] cursor-pointer">
+                                                    @foreach($allAvailableDrinks as $ad)
+                                                        <option value="{{ $ad->id }}">{{ $ad->name }}</option>
+                                                    @endforeach
+                                                </select>
+                                            </div>
+                                            @if(count($scheduleItems) > 1)
+                                                <button type="button" wire:click="removeScheduleItemRow({{ $idx }})"
+                                                        class="w-7 h-7 shrink-0 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-600 text-xs font-bold transition flex items-center justify-center cursor-pointer"
+                                                        title="Remove this drink">
+                                                    ✕
+                                                </button>
+                                            @endif
                                         </div>
-                                        <div class="text-[10px] text-[#7C6A60] dark:text-[#BBA79D]">
-                                            {{ $sItem['sugar_level'] ?? 'Normal Sugar' }} • {{ $sItem['ice_level'] ?? 'Normal Ice' }}
+
+                                        <div class="grid grid-cols-3 gap-2">
+                                            <div>
+                                                <label class="block text-[10px] font-semibold text-[#7C6A60] dark:text-[#BBA79D] mb-0.5">{{ __('cbvh.quantity') }}</label>
+                                                <input type="number" min="1" max="99" wire:model.live="scheduleItems.{{ $idx }}.quantity"
+                                                       class="w-full text-xs p-1.5 rounded-lg border border-[#E8DDD6] dark:border-[#3D2F29] bg-white dark:bg-[#241C19] text-[#2C211C] dark:text-[#F5EDE7] font-bold text-center" />
+                                            </div>
+                                            <div>
+                                                <label class="block text-[10px] font-semibold text-[#7C6A60] dark:text-[#BBA79D] mb-0.5">Sugar</label>
+                                                <select wire:model="scheduleItems.{{ $idx }}.sugar_level"
+                                                        class="w-full text-[11px] p-1.5 rounded-lg border border-[#E8DDD6] dark:border-[#3D2F29] bg-white dark:bg-[#241C19] text-[#2C211C] dark:text-[#F5EDE7] cursor-pointer">
+                                                    <option value="Normal Sugar">Normal Sugar</option>
+                                                    <option value="Less Sugar">Less Sugar</option>
+                                                    <option value="No Sugar">No Sugar</option>
+                                                </select>
+                                            </div>
+                                            <div>
+                                                <label class="block text-[10px] font-semibold text-[#7C6A60] dark:text-[#BBA79D] mb-0.5">Ice</label>
+                                                <select wire:model="scheduleItems.{{ $idx }}.ice_level"
+                                                        class="w-full text-[11px] p-1.5 rounded-lg border border-[#E8DDD6] dark:border-[#3D2F29] bg-white dark:bg-[#241C19] text-[#2C211C] dark:text-[#F5EDE7] cursor-pointer">
+                                                    <option value="Normal Ice">Normal Ice</option>
+                                                    <option value="Less Ice">Less Ice</option>
+                                                    <option value="No Ice">No Ice</option>
+                                                    <option value="Separate Ice">Separate Ice</option>
+                                                </select>
+                                            </div>
                                         </div>
                                     </div>
-                                    <button type="button" wire:click="removeDrinkFromRecurringSchedule({{ $sItem['id'] }})"
-                                            class="w-7 h-7 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-600 text-xs font-bold transition flex items-center justify-center cursor-pointer"
-                                            title="Remove item">
-                                        ✕
-                                    </button>
-                                </div>
-                            @empty
-                                <div class="p-4 rounded-xl border border-dashed border-[#E8DDD6] text-center text-xs text-[#7C6A60]">
-                                    No drinks in package yet. Add below!
-                                </div>
-                            @endforelse
-                        </div>
-
-                        <!-- Add Drink to Package Form -->
-                        <div class="p-3.5 rounded-xl border border-[#E8DDD6] dark:border-[#3D2F29] bg-[#FAF6F3]/50 dark:bg-[#1E1715] space-y-2.5">
-                            <div class="text-[11px] font-bold text-[#2C211C] dark:text-[#F5EDE7]">➕ {{ __('cbvh.add_drink_to_schedule') }}</div>
-                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                <div class="sm:col-span-2">
-                                    <select wire:model="newScheduleDrinkId" class="w-full text-xs p-2 rounded-xl border border-[#E8DDD6] dark:border-[#3D2F29] bg-white dark:bg-[#241C19] text-[#2C211C] dark:text-[#F5EDE7] font-semibold cursor-pointer">
-                                        @foreach($allAvailableDrinks as $ad)
-                                            <option value="{{ $ad->id }}">{{ $ad->name }}</option>
-                                        @endforeach
-                                    </select>
-                                </div>
-                                <div>
-                                    <label class="block text-[10px] font-semibold text-[#7C6A60] mb-0.5">{{ __('cbvh.quantity') }}</label>
-                                    <input type="number" min="1" max="99" wire:model="newScheduleQuantity" class="w-full text-xs p-2 rounded-xl border border-[#E8DDD6] dark:border-[#3D2F29] bg-white dark:bg-[#241C19] text-[#2C211C] dark:text-[#F5EDE7] font-bold" />
-                                </div>
-                                <div>
-                                    <label class="block text-[10px] font-semibold text-[#7C6A60] mb-0.5">Sugar</label>
-                                    <select wire:model="newScheduleSugar" class="w-full text-xs p-2 rounded-xl border border-[#E8DDD6] dark:border-[#3D2F29] bg-white dark:bg-[#241C19] text-[#2C211C] dark:text-[#F5EDE7] cursor-pointer">
-                                        <option value="Normal Sugar">Normal Sugar</option>
-                                        <option value="Less Sugar">Less Sugar (50%)</option>
-                                        <option value="No Sugar">No Sugar (0%)</option>
-                                    </select>
-                                </div>
-                                <div class="sm:col-span-2">
-                                    <label class="block text-[10px] font-semibold text-[#7C6A60] mb-0.5">Ice</label>
-                                    <select wire:model="newScheduleIce" class="w-full text-xs p-2 rounded-xl border border-[#E8DDD6] dark:border-[#3D2F29] bg-white dark:bg-[#241C19] text-[#2C211C] dark:text-[#F5EDE7] cursor-pointer">
-                                        <option value="Normal Ice">Normal Ice</option>
-                                        <option value="Less Ice">Less Ice</option>
-                                        <option value="No Ice">No Ice</option>
-                                        <option value="Separate Ice">Separate Ice</option>
-                                    </select>
-                                </div>
+                                @endforeach
                             </div>
-                            <button type="button" wire:click="addDrinkToRecurringSchedule"
-                                    class="w-full py-2 bg-[#2C211C] hover:bg-[#1A1412] text-white font-bold text-xs rounded-xl transition cursor-pointer">
-                                ➕ Add to Package
+
+                            <button type="button" wire:click="addScheduleItemRow"
+                                    class="w-full py-2 border border-dashed border-[#9E6B55]/50 hover:border-[#9E6B55] hover:bg-[#FAF6F3] dark:hover:bg-[#1A1412] text-[#9E6B55] font-bold text-xs rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5">
+                                <span>➕</span> {{ __('cbvh.add_drink_to_schedule') }}
                             </button>
                         </div>
-                    </div>
+
+                        <!-- Single Unified Submit Button -->
+                        <div class="space-y-2">
+                            <button type="submit" class="w-full py-3 bg-[#9E6B55] hover:bg-[#835440] text-white font-bold text-xs rounded-xl shadow-xs transition cursor-pointer flex items-center justify-center gap-2">
+                                <span wire:loading.remove wire:target="saveRecurringSchedule">💾 {{ __('cbvh.save_schedule') }}</span>
+                                <span wire:loading wire:target="saveRecurringSchedule">⏳ Saving Schedule & Drink Package...</span>
+                            </button>
+                            @if($currentSavedSchedule)
+                                <div class="text-[11px] text-center text-emerald-600 dark:text-emerald-400 font-bold flex items-center justify-center gap-1.5">
+                                    <span>✓ Saved in database</span>
+                                    <span class="opacity-75">({{ $currentSavedSchedule->updated_at->format('d/M/Y h:i A') }})</span>
+                                </div>
+                            @endif
+                        </div>
+                    </form>
                 </div>
 
                 <!-- Right: Monthly Calendar Schedule & Dispatch (7 cols) -->
@@ -2312,6 +2360,10 @@ new class extends Component
                                     class="px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold transition cursor-pointer flex items-center gap-1 shadow-2xs ml-auto">
                                 🗑️ {{ __('cbvh.clear_month') }}
                             </button>
+                        </div>
+
+                        <div class="text-[11px] text-[#7C6A60] dark:text-[#BBA79D] font-medium flex items-center gap-1.5">
+                            <span>{{ __('cbvh.dates_auto_save') }}</span>
                         </div>
 
                         <!-- 7-Column Calendar Grid -->
