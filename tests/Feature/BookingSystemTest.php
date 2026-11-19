@@ -1612,6 +1612,29 @@ class BookingSystemTest extends TestCase
         $this->assertEquals('admin', $admin->fresh()->role);
     }
 
+    public function test_admin_can_edit_staff_name_and_employee_id(): void
+    {
+        $admin = User::factory()->create(['role' => 'admin']);
+        $staff = User::factory()->create(['name' => 'Old Name', 'employee_id' => 'OLD123']);
+        $branch = Branch::first();
+
+        Livewire::actingAs($admin)
+            ->test('admin.approval-portal')
+            ->call('openEditStaffModal', $staff->id)
+            ->assertSet('editingStaffId', $staff->id)
+            ->assertSet('editingStaffName', 'Old Name')
+            ->assertSet('editingStaffEmployeeId', 'OLD123')
+            ->set('editingStaffName', 'New Correct Name')
+            ->set('editingStaffEmployeeId', 'EMP999')
+            ->set('editingStaffBranchId', $branch->id)
+            ->call('saveEditedStaff')
+            ->assertSet('flashType', 'success');
+
+        $staff->refresh();
+        $this->assertEquals('New Correct Name', $staff->name);
+        $this->assertEquals('EMP999', $staff->employee_id);
+    }
+
     public function test_cannot_submit_drink_order_with_mismatched_branch_and_room(): void
     {
         $employee = User::factory()->create(['role' => 'employee']);

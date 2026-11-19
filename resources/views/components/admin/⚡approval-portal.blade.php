@@ -71,6 +71,13 @@ new class extends Component
     public string $newStaffResetPassword = 'cbvh1234';
     public bool $showResetPasswordModal = false;
 
+    // --- Edit Staff Modal ---
+    public ?int $editingStaffId = null;
+    public string $editingStaffName = '';
+    public string $editingStaffEmployeeId = '';
+    public $editingStaffBranchId = null;
+    public bool $showEditStaffModal = false;
+
     // --- Settings ---
     public $enforceWorkingHours = true;
     public bool $showOptionsInTable = false;
@@ -198,6 +205,48 @@ new class extends Component
         $this->flashType = 'success';
         $this->showResetPasswordModal = false;
         $this->resettingUserId = null;
+    }
+
+    public function openEditStaffModal(int $userId): void
+    {
+        $user = User::findOrFail($userId);
+        $this->editingStaffId = $user->id;
+        $this->editingStaffName = $user->name;
+        $this->editingStaffEmployeeId = $user->employee_id ?? '';
+        $this->editingStaffBranchId = $user->branch_id ?? Branch::first()?->id;
+        $this->showEditStaffModal = true;
+    }
+
+    public function closeEditStaffModal(): void
+    {
+        $this->showEditStaffModal = false;
+        $this->editingStaffId = null;
+    }
+
+    public function saveEditedStaff(): void
+    {
+        if (!$this->editingStaffId) {
+            return;
+        }
+
+        $this->validate([
+            'editingStaffName' => 'required|min:2|max:100',
+            'editingStaffEmployeeId' => 'required|min:2|max:50|unique:users,employee_id,' . $this->editingStaffId,
+            'editingStaffBranchId' => 'required|exists:branches,id',
+        ]);
+
+        $cleanEmpId = strtoupper(trim($this->editingStaffEmployeeId));
+        $user = User::findOrFail($this->editingStaffId);
+        $user->update([
+            'name' => trim($this->editingStaffName),
+            'employee_id' => $cleanEmpId,
+            'branch_id' => $this->editingStaffBranchId,
+        ]);
+
+        $this->flashMessage = "Staff details updated for {$cleanEmpId} ({$user->name}).";
+        $this->flashType = 'success';
+        $this->showEditStaffModal = false;
+        $this->editingStaffId = null;
     }
 
     public function toggleWorkingHoursRule()
@@ -907,7 +956,7 @@ new class extends Component
 };
 ?>
 
-<div wire:poll.8s
+<div @if($activeSection === 'reports') wire:poll.8s @endif
      x-data="{
         confirmLogout: false,
         soundOn: false,
@@ -1457,6 +1506,13 @@ new class extends Component
                                                 {{ __('cbvh.unlink') }}
                                             </button>
                                         @endif
+
+                                        <button wire:click="openEditStaffModal({{ $u->id }})"
+                                                title="Edit Staff Details"
+                                                class="px-2.5 py-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/40 text-blue-700 dark:text-blue-400 font-bold text-[11px] transition cursor-pointer flex items-center space-x-1">
+                                            <span>✏️</span>
+                                            <span>Edit</span>
+                                        </button>
 
                                         <button wire:click="openResetPasswordModal({{ $u->id }})"
                                                 title="{{ __('cbvh.reset_password') }}"
@@ -2057,6 +2113,78 @@ new class extends Component
                         <button type="submit"
                                 class="py-2.5 px-3 rounded-xl bg-[#9E6B55] hover:bg-[#835440] text-white font-bold text-xs shadow-xs cursor-pointer transition">
                             {{ __('cbvh.save_password') }}
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    @endif
+
+    <!-- Edit Staff Modal -->
+    @if($showEditStaffModal)
+        <div class="fixed inset-0 bg-[#2C211C]/60 backdrop-blur-xs z-50 flex items-center justify-center p-4 overscroll-none"
+             wire:keydown.escape="closeEditStaffModal"
+             x-data
+             @wheel.prevent
+             @touchmove.self.prevent
+             @click.self="$wire.closeEditStaffModal()">
+            <div class="bg-white dark:bg-[#241C19] w-full max-w-sm rounded-3xl p-6 border border-[#E8DDD6] dark:border-[#3D2F29] shadow-2xl space-y-4 overscroll-contain"
+                 @wheel.stop
+                 @touchmove.stop>
+                <div class="flex items-center space-x-3">
+                    <div class="w-10 h-10 rounded-2xl bg-blue-100 dark:bg-blue-950/50 text-blue-600 flex items-center justify-center text-xl shrink-0">
+                        ✏️
+                    </div>
+                    <div>
+                        <h3 class="font-bold text-sm text-[#2C211C] dark:text-[#F5EDE7]">
+                            Edit Staff Account
+                        </h3>
+                        <p class="text-xs text-[#7C6A60] dark:text-[#BBA79D]">
+                            Update full name, employee ID, or branch.
+                        </p>
+                    </div>
+                </div>
+
+                <form wire:submit="saveEditedStaff" class="space-y-3 pt-2">
+                    <div>
+                        <label class="block text-xs font-semibold text-[#7C6A60] dark:text-[#BBA79D] mb-1">Full Name</label>
+                        <input type="text"
+                               wire:model="editingStaffName"
+                               required
+                               class="w-full text-xs p-2.5 rounded-xl border border-[#E8DDD6] dark:border-[#3D2F29] bg-[#FAF6F3] dark:bg-[#1A1412] text-[#2C211C] dark:text-[#F5EDE7] font-bold focus:border-[#9E6B55] focus:outline-hidden"
+                               placeholder="e.g. Boran Sem" />
+                        @error('editingStaffName') <span class="text-xs text-rose-500 mt-1 block">{{ $message }}</span> @enderror
+                    </div>
+
+                    <div>
+                        <label class="block text-xs font-semibold text-[#7C6A60] dark:text-[#BBA79D] mb-1">Employee ID</label>
+                        <input type="text"
+                               wire:model="editingStaffEmployeeId"
+                               required
+                               class="w-full text-xs p-2.5 rounded-xl border border-[#E8DDD6] dark:border-[#3D2F29] bg-[#FAF6F3] dark:bg-[#1A1412] text-[#2C211C] dark:text-[#F5EDE7] font-bold uppercase focus:border-[#9E6B55] focus:outline-hidden"
+                               placeholder="e.g. EMP100404" />
+                        @error('editingStaffEmployeeId') <span class="text-xs text-rose-500 mt-1 block">{{ $message }}</span> @enderror
+                    </div>
+
+                    <div>
+                        <label class="block text-xs font-semibold text-[#7C6A60] dark:text-[#BBA79D] mb-1">Branch</label>
+                        <select wire:model="editingStaffBranchId"
+                                class="w-full text-xs p-2.5 rounded-xl border border-[#E8DDD6] dark:border-[#3D2F29] bg-[#FAF6F3] dark:bg-[#1A1412] text-[#2C211C] dark:text-[#F5EDE7] font-bold focus:border-[#9E6B55] focus:outline-hidden cursor-pointer">
+                            @foreach($branches as $b)
+                                <option value="{{ $b->id }}">{{ $b->name }} {{ $b->is_hq ? '(HQ)' : '' }}</option>
+                            @endforeach
+                        </select>
+                        @error('editingStaffBranchId') <span class="text-xs text-rose-500 mt-1 block">{{ $message }}</span> @enderror
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-2 pt-2">
+                        <button type="button" wire:click="closeEditStaffModal"
+                                class="py-2.5 px-3 rounded-xl bg-[#FAF6F3] dark:bg-[#1A1412] border border-[#E8DDD6] dark:border-[#3D2F29] text-[#2C211C] dark:text-[#F5EDE7] font-bold text-xs cursor-pointer hover:bg-[#F5EDE7] transition">
+                            Cancel
+                        </button>
+                        <button type="submit"
+                                class="py-2.5 px-3 rounded-xl bg-[#9E6B55] hover:bg-[#835440] text-white font-bold text-xs shadow-xs cursor-pointer transition">
+                            Save Changes
                         </button>
                     </div>
                 </form>
