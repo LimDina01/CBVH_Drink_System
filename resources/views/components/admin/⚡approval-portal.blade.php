@@ -1177,9 +1177,14 @@ new class extends Component
             $allAvailableDrinks = DrinkItem::where('is_available', true)->orderBy('name')->get()->unique('name')->values();
         }
 
+        $currentSavedSchedule = $this->scheduleId
+            ? RecurringSchedule::with(['branch', 'items.drinkItem'])->find($this->scheduleId)
+            : null;
+
         return [
             'branches' => Branch::all(),
             'rooms' => Room::all(),
+            'currentSavedSchedule' => $currentSavedSchedule,
             'orders' => $paginatedOrders,
             'totalOrders' => $allFilteredOrders->count(),
             'totalCups' => $totalCups,
@@ -2065,6 +2070,42 @@ new class extends Component
         @endif
 
         @if($activeSection === 'recurring')
+            <!-- Live Saved Schedule Confirmation Banner -->
+            @if($currentSavedSchedule)
+                <div class="mb-5 p-4 rounded-2xl bg-white dark:bg-[#241C19] border-2 border-emerald-500/40 dark:border-emerald-600/40 shadow-xs flex flex-wrap items-center justify-between gap-3">
+                    <div class="flex items-center space-x-3.5">
+                        <div class="w-10 h-10 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center text-xl shrink-0">
+                            🗓️
+                        </div>
+                        <div>
+                            <div class="flex items-center gap-2">
+                                <h3 class="font-black text-sm text-[#2C211C] dark:text-[#F5EDE7]">
+                                    {{ $currentSavedSchedule->title }}
+                                </h3>
+                                <span class="px-2 py-0.5 rounded-full text-[10px] font-black uppercase {{ $currentSavedSchedule->is_active ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300' : 'bg-gray-100 text-gray-700' }}">
+                                    {{ $currentSavedSchedule->is_active ? '● LIVE / ACTIVE' : '⏸️ PAUSED' }}
+                                </span>
+                            </div>
+                            <p class="text-xs text-[#7C6A60] dark:text-[#BBA79D] mt-0.5">
+                                🏢 <strong>{{ $currentSavedSchedule->branch?->name }}</strong>
+                                @if($currentSavedSchedule->location_detail)
+                                    • 📍 {{ $currentSavedSchedule->location_detail }}
+                                @endif
+                                • ⏰ Delivery at <strong>{{ \Carbon\Carbon::parse($currentSavedSchedule->delivery_time)->format('h:i A') }}</strong>
+                                • ☕ <strong>{{ $dailyCups }} cups/day</strong>
+                            </p>
+                        </div>
+                    </div>
+
+                    <div class="flex items-center space-x-3 text-xs">
+                        <div class="text-[#7C6A60] dark:text-[#BBA79D] sm:text-right">
+                            <span class="block text-[10px] uppercase font-bold text-emerald-700 dark:text-emerald-400">✓ Schedule Set & Saved</span>
+                            <span class="block text-[10px] opacity-75">Database ID #{{ $currentSavedSchedule->id }} • Updated {{ $currentSavedSchedule->updated_at->diffForHumans() }}</span>
+                        </div>
+                    </div>
+                </div>
+            @endif
+
             <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
                 <!-- Left: Schedule Info & Daily Basket (5 cols) -->
                 <div class="lg:col-span-5 space-y-6">
@@ -2129,9 +2170,18 @@ new class extends Component
                                        class="w-full text-xs p-2.5 rounded-xl border border-[#E8DDD6] dark:border-[#3D2F29] bg-[#FAF6F3] dark:bg-[#1A1412] text-[#2C211C] dark:text-[#F5EDE7]" />
                             </div>
 
-                            <button type="submit" class="w-full py-2.5 bg-[#9E6B55] hover:bg-[#835440] text-white font-bold text-xs rounded-xl shadow-xs transition cursor-pointer flex items-center justify-center gap-1.5">
-                                💾 {{ __('cbvh.save_schedule') }}
-                            </button>
+                            <div class="space-y-1.5 pt-1">
+                                <button type="submit" class="w-full py-2.5 bg-[#9E6B55] hover:bg-[#835440] text-white font-bold text-xs rounded-xl shadow-xs transition cursor-pointer flex items-center justify-center gap-1.5">
+                                    <span wire:loading.remove wire:target="saveRecurringSchedule">💾 {{ __('cbvh.save_schedule') }}</span>
+                                    <span wire:loading wire:target="saveRecurringSchedule">⏳ Saving to Database...</span>
+                                </button>
+                                @if($currentSavedSchedule)
+                                    <div class="text-[10px] text-center text-emerald-600 dark:text-emerald-400 font-bold flex items-center justify-center gap-1">
+                                        <span>✓ Saved in database</span>
+                                        <span class="opacity-75">({{ $currentSavedSchedule->updated_at->format('d/M/Y h:i A') }})</span>
+                                    </div>
+                                @endif
+                            </div>
                         </form>
                     </div>
 
