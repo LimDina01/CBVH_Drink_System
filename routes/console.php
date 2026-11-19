@@ -15,3 +15,4 @@ Artisan::command('drinks:auto-complete', function () {
 })->purpose('Auto-complete drink orders in delivery after 10 minutes');
 
 Schedule::command('drinks:auto-complete')->everyMinute();
+Schedule::command('recurring:dispatch')->everyFifteenMinutes();

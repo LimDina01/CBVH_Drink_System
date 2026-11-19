@@ -360,13 +360,15 @@ class TelegramService
         $typeBadge = match ($order->order_type) {
             'instant' => '⚡ QUICK DRINK',
             'extend' => "🔄 EXTEND / MORE (Ref #{$order->parent_order_id})",
+            'recurring' => '🗓️ STANDING RECURRING ORDER',
             default => '📅 MEETING DRINK',
         };
 
         $when = $order->delivery_time ? $order->delivery_time->format('d/M/Y, h:i A') : 'ASAP';
+        $location = $order->room ? $order->room->name : 'Main Area';
         $text = "🔔 <b>{$typeBadge} — Order #{$order->id}</b>\n\n"
               . "<b>Branch:</b> {$order->branch->name}\n"
-              . "<b>Room:</b> {$order->room->name}\n"
+              . "<b>Location:</b> {$location}\n"
               . "<b>Requester:</b> {$order->user->name}\n"
               . "<b>Target Time:</b> {$when}\n";
 

@@ -65,6 +65,9 @@ new class extends Component
     public function with()
     {
         DrinkOrder::autoCompleteExpiredDeliveries();
+        try {
+            app(\App\Services\RecurringOrderService::class)->dispatchDueOrders();
+        } catch (\Throwable $e) {}
 
         $orders = DrinkOrder::whereIn('status', ['approved', 'preparing', 'in_delivery'])
             ->with(['branch', 'room', 'items.drinkItem'])
@@ -73,7 +76,7 @@ new class extends Component
             ->get();
 
         $instantOrders = $orders->whereIn('order_type', ['instant', 'extend']);
-        $meetingOrders = $orders->where('order_type', 'meeting');
+        $meetingOrders = $orders->whereIn('order_type', ['meeting', 'recurring']);
 
         $approvedOrders = $orders->where('status', 'approved');
         $newCount = $approvedOrders->count();
@@ -81,7 +84,7 @@ new class extends Component
 
         if ($latestApproved && $latestApproved->id > $this->lastKnownOrderId) {
             $this->lastKnownOrderId = (int) $latestApproved->id;
-            $orderType = ($latestApproved->order_type === 'meeting') ? 'meeting' : 'quick';
+            $orderType = in_array($latestApproved->order_type, ['meeting', 'recurring']) ? 'meeting' : 'quick';
             $this->dispatch('new-barista-order', orderType: $orderType);
         }
 

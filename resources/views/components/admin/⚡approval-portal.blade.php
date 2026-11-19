@@ -5,9 +5,14 @@ use Livewire\WithPagination;
 use Livewire\WithFileUploads;
 use Livewire\Attributes\Url;
 use App\Models\Branch;
+use App\Models\Room;
 use App\Models\DrinkItem;
 use App\Models\DrinkOrder;
 use App\Models\User;
+use App\Models\RecurringSchedule;
+use App\Models\RecurringScheduleItem;
+use App\Models\RecurringScheduleDate;
+use App\Services\RecurringOrderService;
 use App\Services\TelegramService;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\Cache;
@@ -78,6 +83,23 @@ new class extends Component
     public string $editingStaffEmployeeId = '';
     public bool $showEditStaffModal = false;
 
+    // --- Recurring Schedule Management ---
+    public ?int $scheduleId = null;
+    public string $scheduleTitle = 'Daily Standing Order';
+    public ?int $scheduleBranchId = null;
+    public ?int $scheduleRoomId = null;
+    public string $scheduleLocationDetail = '';
+    public string $scheduleDeliveryTime = '08:30';
+    public bool $scheduleIsActive = true;
+    public string $scheduleNotes = '';
+    public int $calendarYear = 0;
+    public int $calendarMonth = 0;
+    public array $scheduleItems = [];
+    public ?int $newScheduleDrinkId = null;
+    public int $newScheduleQuantity = 10;
+    public string $newScheduleSugar = 'Normal Sugar';
+    public string $newScheduleIce = 'Normal Ice';
+
     // --- Settings ---
     public $enforceWorkingHours = true;
     public bool $showOptionsInTable = false;
@@ -87,13 +109,14 @@ new class extends Component
 
     public function mount()
     {
-        if (!in_array($this->activeSection, ['reports', 'team', 'drinks'], true)) {
+        if (!in_array($this->activeSection, ['reports', 'team', 'drinks', 'recurring'], true)) {
             $this->activeSection = 'reports';
         }
         $this->setPeriod('this_month');
         $this->enforceWorkingHours = (bool) Cache::get('enforce_working_hours', true);
         $this->newBranchId = Branch::first()?->id;
         $this->lastKnownOrderId = (int) (DrinkOrder::max('id') ?? 0);
+        $this->loadDefaultRecurringSchedule();
     }
 
     public function setPeriod(string $period): void
@@ -829,6 +852,181 @@ new class extends Component
         ]);
     }
 
+    public function loadDefaultRecurringSchedule(): void
+    {
+        $this->calendarYear = (int) now()->year;
+        $this->calendarMonth = (int) now()->month;
+
+        $first = RecurringSchedule::with(['items', 'dates'])->first();
+        if (!$first) {
+            $hqBranch = Branch::where('code', 'HQ')->first() ?? Branch::first();
+            $first = RecurringSchedule::create([
+                'title' => 'Daily Standing Order',
+                'branch_id' => $hqBranch ? $hqBranch->id : 1,
+                'delivery_time' => '08:30',
+                'is_active' => true,
+                'created_by' => auth()->id(),
+            ]);
+
+            $firstDrink = DrinkItem::first();
+            if ($firstDrink) {
+                RecurringScheduleItem::create([
+                    'recurring_schedule_id' => $first->id,
+                    'drink_item_id' => $firstDrink->id,
+                    'quantity' => 10,
+                    'sugar_level' => 'Normal Sugar',
+                    'ice_level' => 'Normal Ice',
+                ]);
+            }
+
+            app(RecurringOrderService::class)->prefillMonth($first, $this->calendarYear, $this->calendarMonth, false);
+            $first->load(['items', 'dates']);
+        }
+
+        $this->scheduleId = $first->id;
+        $this->scheduleTitle = $first->title;
+        $this->scheduleBranchId = $first->branch_id;
+        $this->scheduleRoomId = $first->room_id;
+        $this->scheduleLocationDetail = $first->location_detail ?? '';
+        $this->scheduleDeliveryTime = $first->delivery_time ?? '08:30';
+        $this->scheduleIsActive = (bool) $first->is_active;
+        $this->scheduleNotes = $first->notes ?? '';
+        $this->syncScheduleItemsArray($first);
+
+        if ($this->newScheduleDrinkId === null) {
+            $this->newScheduleDrinkId = DrinkItem::first()?->id;
+        }
+    }
+
+    protected function syncScheduleItemsArray(RecurringSchedule $schedule): void
+    {
+        $this->scheduleItems = $schedule->items()->with('drinkItem')->get()->map(function ($item) {
+            return [
+                'id' => $item->id,
+                'drink_item_id' => $item->drink_item_id,
+                'name' => $item->drinkItem ? $item->drinkItem->name : 'Unknown Drink',
+                'quantity' => $item->quantity,
+                'sugar_level' => $item->sugar_level,
+                'ice_level' => $item->ice_level,
+            ];
+        })->toArray();
+    }
+
+    public function prevMonth(): void
+    {
+        $d = \Carbon\Carbon::createFromDate($this->calendarYear, $this->calendarMonth, 1)->subMonth();
+        $this->calendarYear = $d->year;
+        $this->calendarMonth = $d->month;
+    }
+
+    public function nextMonth(): void
+    {
+        $d = \Carbon\Carbon::createFromDate($this->calendarYear, $this->calendarMonth, 1)->addMonth();
+        $this->calendarYear = $d->year;
+        $this->calendarMonth = $d->month;
+    }
+
+    public function toggleScheduleDate(string $dateStr): void
+    {
+        $schedule = RecurringSchedule::find($this->scheduleId);
+        if (!$schedule) return;
+
+        app(RecurringOrderService::class)->toggleDate($schedule, $dateStr);
+    }
+
+    public function prefillScheduleWorkingDays(bool $includeSaturday = false): void
+    {
+        $schedule = RecurringSchedule::find($this->scheduleId);
+        if (!$schedule) return;
+
+        app(RecurringOrderService::class)->prefillMonth($schedule, $this->calendarYear, $this->calendarMonth, $includeSaturday);
+        $this->flashMessage = $includeSaturday ? "Prefilled Mon – Sat for this month." : "Prefilled Mon – Fri for this month.";
+        $this->flashType = 'success';
+    }
+
+    public function copyScheduleFromPreviousMonth(): void
+    {
+        $schedule = RecurringSchedule::find($this->scheduleId);
+        if (!$schedule) return;
+
+        $copied = app(RecurringOrderService::class)->copyPreviousMonth($schedule, $this->calendarYear, $this->calendarMonth);
+        $this->flashMessage = "Copied {$copied} scheduled days from previous month.";
+        $this->flashType = 'success';
+    }
+
+    public function clearScheduleCurrentMonth(): void
+    {
+        $schedule = RecurringSchedule::find($this->scheduleId);
+        if (!$schedule) return;
+
+        app(RecurringOrderService::class)->clearMonth($schedule, $this->calendarYear, $this->calendarMonth);
+        $this->flashMessage = "Cleared schedule for this month.";
+        $this->flashType = 'info';
+    }
+
+    public function addDrinkToRecurringSchedule(): void
+    {
+        if (!$this->newScheduleDrinkId || $this->newScheduleQuantity < 1) return;
+
+        $schedule = RecurringSchedule::find($this->scheduleId);
+        if (!$schedule) return;
+
+        RecurringScheduleItem::create([
+            'recurring_schedule_id' => $schedule->id,
+            'drink_item_id' => $this->newScheduleDrinkId,
+            'quantity' => $this->newScheduleQuantity,
+            'sugar_level' => $this->newScheduleSugar,
+            'ice_level' => $this->newScheduleIce,
+        ]);
+
+        $this->syncScheduleItemsArray($schedule);
+        $this->flashMessage = "Added drink to daily package.";
+        $this->flashType = 'success';
+    }
+
+    public function removeDrinkFromRecurringSchedule(int $itemId): void
+    {
+        RecurringScheduleItem::where('id', $itemId)
+            ->where('recurring_schedule_id', $this->scheduleId)
+            ->delete();
+
+        $schedule = RecurringSchedule::find($this->scheduleId);
+        if ($schedule) {
+            $this->syncScheduleItemsArray($schedule);
+        }
+    }
+
+    public function saveRecurringSchedule(): void
+    {
+        $schedule = RecurringSchedule::find($this->scheduleId);
+        if (!$schedule) return;
+
+        $schedule->update([
+            'title' => $this->scheduleTitle ?: 'Daily Standing Order',
+            'branch_id' => $this->scheduleBranchId,
+            'room_id' => $this->scheduleRoomId,
+            'location_detail' => $this->scheduleLocationDetail,
+            'delivery_time' => $this->scheduleDeliveryTime ?: '08:30',
+            'is_active' => $this->scheduleIsActive,
+            'notes' => $this->scheduleNotes,
+        ]);
+
+        $this->flashMessage = __('cbvh.schedule_saved');
+        $this->flashType = 'success';
+    }
+
+    public function dispatchTodayOrderNow(): void
+    {
+        $orders = app(RecurringOrderService::class)->dispatchDueOrders(today());
+        if (count($orders) > 0) {
+            $this->flashMessage = "Generated order #{$orders[0]->id} for today and sent to Barista!";
+            $this->flashType = 'success';
+        } else {
+            $this->flashMessage = "No pending order for today (today might not be scheduled or was already generated).";
+            $this->flashType = 'info';
+        }
+    }
+
     public function with()
     {
         DrinkOrder::autoCompleteExpiredDeliveries();
@@ -939,8 +1137,32 @@ new class extends Component
             $drinkCategories = ['coffee', 'tea', 'special'];
         }
 
+        // Recurring calendar calculation
+        $startOfMonth = \Carbon\Carbon::createFromDate($this->calendarYear, $this->calendarMonth, 1)->startOfMonth();
+        $daysInMonth = $startOfMonth->daysInMonth;
+        $firstDayIso = $startOfMonth->isoWeekday(); // 1 = Mon, 7 = Sun
+        $monthName = $startOfMonth->format('F Y');
+
+        $monthScheduledDates = collect();
+        if ($this->scheduleId) {
+            $monthScheduledDates = RecurringScheduleDate::where('recurring_schedule_id', $this->scheduleId)
+                ->whereYear('delivery_date', $this->calendarYear)
+                ->whereMonth('delivery_date', $this->calendarMonth)
+                ->get()
+                ->keyBy(fn($d) => $d->delivery_date->toDateString());
+        }
+
+        $activeDaysThisMonth = $monthScheduledDates->whereIn('status', ['scheduled', 'generated'])->count();
+        $dailyCups = $this->scheduleId
+            ? (int) RecurringScheduleItem::where('recurring_schedule_id', $this->scheduleId)->sum('quantity')
+            : 0;
+        $totalMonthCups = $activeDaysThisMonth * $dailyCups;
+
+        $allAvailableDrinks = DrinkItem::where('is_available', true)->orderBy('name')->get();
+
         return [
             'branches' => Branch::all(),
+            'rooms' => Room::all(),
             'orders' => $paginatedOrders,
             'totalOrders' => $allFilteredOrders->count(),
             'totalCups' => $totalCups,
@@ -953,6 +1175,14 @@ new class extends Component
             'menuDrinks' => $paginatedDrinks,
             'drinkCategories' => $drinkCategories,
             'currentHostUrl' => request()->getSchemeAndHttpHost(),
+            'daysInMonth' => $daysInMonth,
+            'firstDayIso' => $firstDayIso,
+            'monthName' => $monthName,
+            'monthScheduledDates' => $monthScheduledDates,
+            'activeDaysThisMonth' => $activeDaysThisMonth,
+            'dailyCups' => $dailyCups,
+            'totalMonthCups' => $totalMonthCups,
+            'allAvailableDrinks' => $allAvailableDrinks,
         ];
     }
 };
@@ -1051,6 +1281,10 @@ new class extends Component
             <button wire:click="$set('activeSection', 'reports')"
                     class="px-3.5 py-2 rounded-xl text-xs font-bold transition cursor-pointer {{ $activeSection === 'reports' ? 'bg-[#9E6B55] text-white' : 'bg-[#F5EDE7] text-[#835440] border border-[#E8DDD6]' }}">
                 📊 {{ __('cbvh.tab_tracking_reports') }}
+            </button>
+            <button wire:click="$set('activeSection', 'recurring')"
+                    class="px-3.5 py-2 rounded-xl text-xs font-bold transition cursor-pointer {{ $activeSection === 'recurring' ? 'bg-[#9E6B55] text-white shadow-xs' : 'bg-[#F5EDE7] text-[#835440] border border-[#E8DDD6]' }}">
+                🗓️ {{ __('cbvh.tab_recurring') }}
             </button>
             <button wire:click="$set('activeSection', 'team')"
                     class="px-3.5 py-2 rounded-xl text-xs font-bold transition cursor-pointer {{ $activeSection === 'team' ? 'bg-[#9E6B55] text-white' : 'bg-[#F5EDE7] text-[#835440] border border-[#E8DDD6]' }}">
@@ -1810,6 +2044,321 @@ new class extends Component
                         </div>
                     </div>
                 @endif
+            </div>
+        @endif
+
+        @if($activeSection === 'recurring')
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                <!-- Left: Schedule Info & Daily Basket (5 cols) -->
+                <div class="lg:col-span-5 space-y-6">
+                    <!-- Schedule Settings Card -->
+                    <div class="bg-white dark:bg-[#241C19] rounded-2xl border border-[#E8DDD6] dark:border-[#3D2F29] p-5 shadow-2xs space-y-4">
+                        <div class="flex items-center justify-between border-b border-[#E8DDD6] dark:border-[#3D2F29] pb-3">
+                            <h2 class="font-bold text-sm text-[#2C211C] dark:text-[#F5EDE7] flex items-center gap-2">
+                                <span>⚙️</span> {{ __('cbvh.recurring_schedule') }}
+                            </h2>
+                            <label class="inline-flex items-center gap-2 cursor-pointer text-xs font-semibold">
+                                <input type="checkbox" wire:model="scheduleIsActive" class="w-4 h-4 text-[#9E6B55] rounded-sm border-[#E8DDD6] focus:ring-[#9E6B55]" />
+                                <span class="{{ $scheduleIsActive ? 'text-emerald-600 font-bold' : 'text-[#7C6A60]' }}">
+                                    {{ $scheduleIsActive ? '🟢 Active' : '⏸️ Paused' }}
+                                </span>
+                            </label>
+                        </div>
+
+                        <form wire:submit="saveRecurringSchedule" class="space-y-3">
+                            <div>
+                                <label class="block text-[11px] font-bold text-[#7C6A60] dark:text-[#BBA79D] mb-1">
+                                    Schedule Title
+                                </label>
+                                <input type="text" wire:model="scheduleTitle" required
+                                       class="w-full text-xs p-2.5 rounded-xl border border-[#E8DDD6] dark:border-[#3D2F29] bg-[#FAF6F3] dark:bg-[#1A1412] text-[#2C211C] dark:text-[#F5EDE7] font-semibold" />
+                            </div>
+
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                                <div>
+                                    <label class="block text-[11px] font-bold text-[#7C6A60] dark:text-[#BBA79D] mb-1">
+                                        {{ __('cbvh.branch') }}
+                                    </label>
+                                    <select wire:model="scheduleBranchId" class="w-full text-xs p-2.5 rounded-xl border border-[#E8DDD6] dark:border-[#3D2F29] bg-[#FAF6F3] dark:bg-[#1A1412] text-[#2C211C] dark:text-[#F5EDE7] font-semibold cursor-pointer">
+                                        @foreach($branches as $b)
+                                            <option value="{{ $b->id }}">{{ $b->name }} {{ $b->is_hq ? '(HQ)' : '' }}</option>
+                                        @endforeach
+                                    </select>
+                                </div>
+
+                                <div>
+                                    <label class="block text-[11px] font-bold text-[#7C6A60] dark:text-[#BBA79D] mb-1">
+                                        {{ __('cbvh.delivery_time') }}
+                                    </label>
+                                    <input type="time" wire:model="scheduleDeliveryTime" required
+                                           class="w-full text-xs p-2.5 rounded-xl border border-[#E8DDD6] dark:border-[#3D2F29] bg-[#FAF6F3] dark:bg-[#1A1412] text-[#2C211C] dark:text-[#F5EDE7] font-bold" />
+                                </div>
+                            </div>
+
+                            <div>
+                                <label class="block text-[11px] font-bold text-[#7C6A60] dark:text-[#BBA79D] mb-1">
+                                    {{ __('cbvh.location_detail') }}
+                                </label>
+                                <input type="text" wire:model="scheduleLocationDetail" placeholder="Leave blank for branch or enter floor/room (e.g. 2nd Floor Executive)"
+                                       class="w-full text-xs p-2.5 rounded-xl border border-[#E8DDD6] dark:border-[#3D2F29] bg-[#FAF6F3] dark:bg-[#1A1412] text-[#2C211C] dark:text-[#F5EDE7]" />
+                                <span class="text-[10px] text-[#7C6A60] dark:text-[#BBA79D] mt-0.5 block">Default is blank (delivers to Branch). Specify exact floor/room if needed.</span>
+                            </div>
+
+                            <div>
+                                <label class="block text-[11px] font-bold text-[#7C6A60] dark:text-[#BBA79D] mb-1">
+                                    {{ __('cbvh.notes') }}
+                                </label>
+                                <input type="text" wire:model="scheduleNotes" placeholder="Special standing instructions for barista..."
+                                       class="w-full text-xs p-2.5 rounded-xl border border-[#E8DDD6] dark:border-[#3D2F29] bg-[#FAF6F3] dark:bg-[#1A1412] text-[#2C211C] dark:text-[#F5EDE7]" />
+                            </div>
+
+                            <button type="submit" class="w-full py-2.5 bg-[#9E6B55] hover:bg-[#835440] text-white font-bold text-xs rounded-xl shadow-xs transition cursor-pointer flex items-center justify-center gap-1.5">
+                                💾 {{ __('cbvh.save_schedule') }}
+                            </button>
+                        </form>
+                    </div>
+
+                    <!-- Daily Drinks Package Card -->
+                    <div class="bg-white dark:bg-[#241C19] rounded-2xl border border-[#E8DDD6] dark:border-[#3D2F29] p-5 shadow-2xs space-y-4">
+                        <div class="flex items-center justify-between border-b border-[#E8DDD6] dark:border-[#3D2F29] pb-3">
+                            <div>
+                                <h2 class="font-bold text-sm text-[#2C211C] dark:text-[#F5EDE7] flex items-center gap-2">
+                                    <span>☕</span> {{ __('cbvh.daily_drinks_package') }}
+                                </h2>
+                                <p class="text-[11px] text-[#7C6A60] dark:text-[#BBA79D]">Daily batch prepared for this schedule</p>
+                            </div>
+                            <span class="px-2.5 py-1 rounded-xl bg-[#FAF6F3] dark:bg-[#1A1412] border border-[#E8DDD6] dark:border-[#3D2F29] text-xs font-black text-[#9E6B55]">
+                                {{ $dailyCups }} cups / day
+                            </span>
+                        </div>
+
+                        <!-- Current Items in Basket -->
+                        <div class="space-y-2">
+                            @forelse($scheduleItems as $idx => $sItem)
+                                <div class="flex items-center justify-between p-3 rounded-xl bg-[#FAF6F3] dark:bg-[#1A1412] border border-[#E8DDD6] dark:border-[#3D2F29]">
+                                    <div>
+                                        <div class="text-xs font-black text-[#2C211C] dark:text-[#F5EDE7]">
+                                            {{ $sItem['quantity'] }}x {{ $sItem['name'] }}
+                                        </div>
+                                        <div class="text-[10px] text-[#7C6A60] dark:text-[#BBA79D]">
+                                            {{ $sItem['sugar_level'] ?? 'Normal Sugar' }} • {{ $sItem['ice_level'] ?? 'Normal Ice' }}
+                                        </div>
+                                    </div>
+                                    <button type="button" wire:click="removeDrinkFromRecurringSchedule({{ $sItem['id'] }})"
+                                            class="w-7 h-7 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-600 text-xs font-bold transition flex items-center justify-center cursor-pointer"
+                                            title="Remove item">
+                                        ✕
+                                    </button>
+                                </div>
+                            @empty
+                                <div class="p-4 rounded-xl border border-dashed border-[#E8DDD6] text-center text-xs text-[#7C6A60]">
+                                    No drinks in package yet. Add below!
+                                </div>
+                            @endforelse
+                        </div>
+
+                        <!-- Add Drink to Package Form -->
+                        <div class="p-3.5 rounded-xl border border-[#E8DDD6] dark:border-[#3D2F29] bg-[#FAF6F3]/50 dark:bg-[#1E1715] space-y-2.5">
+                            <div class="text-[11px] font-bold text-[#2C211C] dark:text-[#F5EDE7]">➕ {{ __('cbvh.add_drink_to_schedule') }}</div>
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                <div class="sm:col-span-2">
+                                    <select wire:model="newScheduleDrinkId" class="w-full text-xs p-2 rounded-xl border border-[#E8DDD6] dark:border-[#3D2F29] bg-white dark:bg-[#241C19] text-[#2C211C] dark:text-[#F5EDE7] font-semibold cursor-pointer">
+                                        @foreach($allAvailableDrinks as $ad)
+                                            <option value="{{ $ad->id }}">{{ $ad->name }}</option>
+                                        @endforeach
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-[10px] font-semibold text-[#7C6A60] mb-0.5">{{ __('cbvh.quantity') }}</label>
+                                    <input type="number" min="1" max="99" wire:model="newScheduleQuantity" class="w-full text-xs p-2 rounded-xl border border-[#E8DDD6] dark:border-[#3D2F29] bg-white dark:bg-[#241C19] text-[#2C211C] dark:text-[#F5EDE7] font-bold" />
+                                </div>
+                                <div>
+                                    <label class="block text-[10px] font-semibold text-[#7C6A60] mb-0.5">Sugar</label>
+                                    <select wire:model="newScheduleSugar" class="w-full text-xs p-2 rounded-xl border border-[#E8DDD6] dark:border-[#3D2F29] bg-white dark:bg-[#241C19] text-[#2C211C] dark:text-[#F5EDE7] cursor-pointer">
+                                        <option value="Normal Sugar">Normal Sugar</option>
+                                        <option value="Less Sugar">Less Sugar (50%)</option>
+                                        <option value="No Sugar">No Sugar (0%)</option>
+                                    </select>
+                                </div>
+                                <div class="sm:col-span-2">
+                                    <label class="block text-[10px] font-semibold text-[#7C6A60] mb-0.5">Ice</label>
+                                    <select wire:model="newScheduleIce" class="w-full text-xs p-2 rounded-xl border border-[#E8DDD6] dark:border-[#3D2F29] bg-white dark:bg-[#241C19] text-[#2C211C] dark:text-[#F5EDE7] cursor-pointer">
+                                        <option value="Normal Ice">Normal Ice</option>
+                                        <option value="Less Ice">Less Ice</option>
+                                        <option value="No Ice">No Ice</option>
+                                        <option value="Separate Ice">Separate Ice</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <button type="button" wire:click="addDrinkToRecurringSchedule"
+                                    class="w-full py-2 bg-[#2C211C] hover:bg-[#1A1412] text-white font-bold text-xs rounded-xl transition cursor-pointer">
+                                ➕ Add to Package
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Right: Monthly Calendar Schedule & Dispatch (7 cols) -->
+                <div class="lg:col-span-7 space-y-6">
+                    <!-- Monthly Calendar Card -->
+                    <div class="bg-white dark:bg-[#241C19] rounded-2xl border border-[#E8DDD6] dark:border-[#3D2F29] p-5 shadow-2xs space-y-4">
+                        <!-- Month Navigation Header & Stats -->
+                        <div class="flex flex-wrap items-center justify-between gap-3 border-b border-[#E8DDD6] dark:border-[#3D2F29] pb-4">
+                            <div class="flex items-center space-x-2">
+                                <button type="button" wire:click="prevMonth" class="w-8 h-8 rounded-xl border border-[#E8DDD6] dark:border-[#3D2F29] bg-[#FAF6F3] dark:bg-[#1A1412] flex items-center justify-center font-bold text-xs hover:bg-[#E8DDD6] transition cursor-pointer">
+                                    &larr;
+                                </button>
+                                <span class="text-base font-black text-[#2C211C] dark:text-[#F5EDE7] min-w-[130px] text-center">
+                                    {{ $monthName }}
+                                </span>
+                                <button type="button" wire:click="nextMonth" class="w-8 h-8 rounded-xl border border-[#E8DDD6] dark:border-[#3D2F29] bg-[#FAF6F3] dark:bg-[#1A1412] flex items-center justify-center font-bold text-xs hover:bg-[#E8DDD6] transition cursor-pointer">
+                                    &rarr;
+                                </button>
+                            </div>
+
+                            <div class="flex items-center gap-2">
+                                <span class="px-3 py-1 rounded-full bg-[#FAF6F3] dark:bg-[#1A1412] border border-[#E8DDD6] dark:border-[#3D2F29] text-xs font-bold text-[#835440] dark:text-[#E8CFC1]">
+                                    🗓️ {{ $activeDaysThisMonth }} Days Scheduled
+                                </span>
+                                <span class="px-3 py-1 rounded-full bg-[#9E6B55] text-white text-xs font-black shadow-xs">
+                                    📦 {{ $totalMonthCups }} Total Cups
+                                </span>
+                            </div>
+                        </div>
+
+                        <!-- Quick Actions Bar -->
+                        <div class="flex flex-wrap items-center gap-2 pt-1">
+                            <button type="button" wire:click="prefillScheduleWorkingDays(false)"
+                                    class="px-3 py-1.5 rounded-xl bg-[#FAF6F3] dark:bg-[#1A1412] border border-[#E8DDD6] dark:border-[#3D2F29] text-[#2C211C] dark:text-[#F5EDE7] hover:bg-[#9E6B55] hover:text-white hover:border-[#9E6B55] text-xs font-bold transition cursor-pointer flex items-center gap-1 shadow-2xs">
+                                ⚡ {{ __('cbvh.prefill_mon_fri') }}
+                            </button>
+                            <button type="button" wire:click="prefillScheduleWorkingDays(true)"
+                                    class="px-3 py-1.5 rounded-xl bg-[#FAF6F3] dark:bg-[#1A1412] border border-[#E8DDD6] dark:border-[#3D2F29] text-[#2C211C] dark:text-[#F5EDE7] hover:bg-[#9E6B55] hover:text-white hover:border-[#9E6B55] text-xs font-bold transition cursor-pointer flex items-center gap-1 shadow-2xs">
+                                ⚡ {{ __('cbvh.prefill_mon_sat') }}
+                            </button>
+                            <button type="button" wire:click="copyScheduleFromPreviousMonth"
+                                    class="px-3 py-1.5 rounded-xl bg-[#FAF6F3] dark:bg-[#1A1412] border border-[#E8DDD6] dark:border-[#3D2F29] text-[#2C211C] dark:text-[#F5EDE7] hover:bg-[#9E6B55] hover:text-white hover:border-[#9E6B55] text-xs font-bold transition cursor-pointer flex items-center gap-1 shadow-2xs">
+                                📋 {{ __('cbvh.copy_previous_month') }}
+                            </button>
+                            <button type="button" wire:click="clearScheduleCurrentMonth"
+                                    wire:confirm="Are you sure you want to clear all scheduled days for this month?"
+                                    class="px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold transition cursor-pointer flex items-center gap-1 shadow-2xs ml-auto">
+                                🗑️ {{ __('cbvh.clear_month') }}
+                            </button>
+                        </div>
+
+                        <!-- 7-Column Calendar Grid -->
+                        <div class="border border-[#E8DDD6] dark:border-[#3D2F29] rounded-2xl overflow-hidden bg-white dark:bg-[#241C19]">
+                            <!-- Day of week header -->
+                            <div class="grid grid-cols-7 bg-[#FAF6F3] dark:bg-[#1A1412] text-center border-b border-[#E8DDD6] dark:border-[#3D2F29] text-xs font-black text-[#7C6A60] dark:text-[#BBA79D] py-2.5">
+                                <span>Mon</span>
+                                <span>Tue</span>
+                                <span>Wed</span>
+                                <span>Thu</span>
+                                <span>Fri</span>
+                                <span>Sat</span>
+                                <span class="text-rose-500">Sun</span>
+                            </div>
+
+                            <!-- Calendar Day Cells -->
+                            <div class="grid grid-cols-7 gap-1 p-2 bg-[#FAF6F3]/30 dark:bg-[#1A1412]/30">
+                                {{-- Empty cells before first day of month --}}
+                                @for($i = 1; $i < $firstDayIso; $i++)
+                                    <div class="h-16 rounded-xl border border-transparent bg-transparent"></div>
+                                @endfor
+
+                                {{-- Days 1 to daysInMonth --}}
+                                @for($day = 1; $day <= $daysInMonth; $day++)
+                                    @php
+                                        $dateStr = sprintf('%04d-%02d-%02d', $calendarYear, $calendarMonth, $day);
+                                        $curCarbon = \Carbon\Carbon::createFromDate($calendarYear, $calendarMonth, $day);
+                                        $isSunday = ($curCarbon->dayOfWeek === 0);
+                                        $isToday = ($dateStr === today()->toDateString());
+                                        $schedRec = $monthScheduledDates->get($dateStr);
+                                        $status = $schedRec ? $schedRec->status : 'off';
+                                    @endphp
+
+                                    <button type="button"
+                                            wire:click="toggleScheduleDate('{{ $dateStr }}')"
+                                            @disabled($isSunday)
+                                            class="h-16 rounded-xl border p-1.5 text-left transition flex flex-col justify-between cursor-pointer relative group
+                                                   {{ $isToday ? 'ring-2 ring-amber-500 ' : '' }}
+                                                   {{ $isSunday ? 'bg-[#FAF6F3]/40 dark:bg-[#1A1412]/40 border-dashed border-[#E8DDD6]/60 dark:border-[#3D2F29]/60 opacity-40 cursor-not-allowed' :
+                                                      ($status === 'generated' ? 'bg-emerald-600 border-emerald-700 text-white shadow-xs' :
+                                                      ($status === 'scheduled' ? 'bg-[#9E6B55] border-[#835440] text-white shadow-xs hover:bg-[#835440]' :
+                                                      'bg-white dark:bg-[#241C19] border-[#E8DDD6] dark:border-[#3D2F29] text-[#2C211C] dark:text-[#F5EDE7] hover:border-[#9E6B55]')) }}">
+                                        
+                                        <div class="flex items-center justify-between w-full">
+                                            <span class="text-xs font-black {{ in_array($status, ['scheduled', 'generated']) ? 'text-white' : ($isSunday ? 'text-rose-500' : 'text-[#2C211C] dark:text-[#F5EDE7]') }}">
+                                                {{ $day }}
+                                            </span>
+                                            @if($isToday)
+                                                <span class="text-[9px] font-black uppercase px-1 rounded-sm {{ in_array($status, ['scheduled', 'generated']) ? 'bg-black/30 text-amber-200' : 'bg-amber-100 text-amber-800' }}">Today</span>
+                                            @endif
+                                        </div>
+
+                                        <div class="text-[10px] font-bold leading-tight truncate">
+                                            @if($status === 'generated')
+                                                <span class="inline-flex items-center gap-0.5 text-emerald-100">
+                                                    ✓ Sent
+                                                </span>
+                                            @elseif($status === 'scheduled')
+                                                <span class="text-[#FAF6F3]">
+                                                    ☕ {{ $dailyCups }}c
+                                                </span>
+                                            @elseif($isSunday)
+                                                <span class="text-[9px] text-[#7C6A60]/60">Closed</span>
+                                            @else
+                                                <span class="text-[9px] text-[#7C6A60]/50 opacity-0 group-hover:opacity-100 transition">+ Add</span>
+                                            @endif
+                                        </div>
+                                    </button>
+                                @endfor
+                            </div>
+                        </div>
+
+                        <!-- Calendar Legend -->
+                        <div class="flex flex-wrap items-center justify-between gap-2 pt-2 text-[11px] text-[#7C6A60] dark:text-[#BBA79D]">
+                            <div class="flex items-center gap-3">
+                                <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-md bg-[#9E6B55]"></span> Scheduled</span>
+                                <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-md bg-emerald-600"></span> Generated (Sent)</span>
+                                <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-md bg-white dark:bg-[#241C19] border border-[#E8DDD6]"></span> Off / Holiday (Click to toggle)</span>
+                                <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-md bg-[#FAF6F3] border border-dashed border-[#E8DDD6]"></span> Sunday</span>
+                            </div>
+                            <span class="text-[10px] italic">Tip: Click any day to toggle on/off</span>
+                        </div>
+                    </div>
+
+                    <!-- Live Today Dispatch Card -->
+                    <div class="bg-gradient-to-r from-[#FAF6F3] to-[#F5EDE7] dark:from-[#241C19] dark:to-[#1E1715] rounded-2xl border border-[#E8DDD6] dark:border-[#3D2F29] p-5 shadow-2xs flex flex-wrap items-center justify-between gap-4">
+                        <div class="space-y-1">
+                            <div class="text-xs font-black text-[#835440] dark:text-[#E8CFC1] uppercase tracking-wide flex items-center gap-1.5">
+                                <span>🚀</span> Today's Dispatch Status
+                            </div>
+                            @php
+                                $todayDateStr = today()->toDateString();
+                                $todayScheduled = $monthScheduledDates->get($todayDateStr);
+                            @endphp
+                            <div class="text-sm font-bold text-[#2C211C] dark:text-[#F5EDE7]">
+                                @if($todayScheduled && $todayScheduled->status === 'generated')
+                                    ✅ Order #{{ $todayScheduled->generated_order_id }} generated for today and sent to Barista.
+                                @elseif($todayScheduled)
+                                    🗓️ Today is scheduled for delivery at {{ $scheduleDeliveryTime }}.
+                                @else
+                                    ⏸️ Today is currently marked as Off / Holiday in the calendar.
+                                @endif
+                            </div>
+                            <p class="text-xs text-[#7C6A60] dark:text-[#BBA79D]">
+                                Automatic scheduler dispatches orders daily. You can also trigger generation immediately.
+                            </p>
+                        </div>
+
+                        <button type="button" wire:click="dispatchTodayOrderNow"
+                                class="px-4 py-2.5 bg-[#9E6B55] hover:bg-[#835440] text-white font-bold text-xs rounded-xl shadow-xs transition cursor-pointer flex items-center gap-1.5 whitespace-nowrap">
+                            ⚡ {{ __('cbvh.generate_today_now') }}
+                        </button>
+                    </div>
+                </div>
             </div>
         @endif
 

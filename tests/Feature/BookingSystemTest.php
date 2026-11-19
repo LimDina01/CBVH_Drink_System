@@ -1677,4 +1677,110 @@ class BookingSystemTest extends TestCase
             ->assertCount('drinkCart', 1)
             ->assertSet('drinkCart.0.quantity', 7);
     }
+
+    public function test_admin_can_manage_recurring_schedule_and_calendar_dates(): void
+    {
+        $admin = User::factory()->create(['role' => 'admin']);
+        $hq = Branch::where('is_hq', true)->first();
+        $drink = DrinkItem::where('branch_id', $hq->id)->first();
+
+        $component = Livewire::actingAs($admin)
+            ->test('admin.approval-portal')
+            ->set('activeSection', 'recurring')
+            ->set('scheduleTitle', 'Executive Floor Standing Order')
+            ->set('scheduleBranchId', $hq->id)
+            ->set('scheduleLocationDetail', '3rd Floor VIP Room')
+            ->set('scheduleDeliveryTime', '09:00')
+            ->call('saveRecurringSchedule')
+            ->assertSet('flashType', 'success');
+
+        $this->assertDatabaseHas('recurring_schedules', [
+            'title' => 'Executive Floor Standing Order',
+            'location_detail' => '3rd Floor VIP Room',
+            'delivery_time' => '09:00',
+        ]);
+
+        $schedule = \App\Models\RecurringSchedule::first();
+
+        // Test prefilling working days
+        $component->call('prefillScheduleWorkingDays', false); // Mon-Fri
+        $this->assertTrue($schedule->dates()->count() > 15);
+
+        // Test adding drink to package
+        $component->set('newScheduleDrinkId', $drink->id)
+            ->set('newScheduleQuantity', 10)
+            ->set('newScheduleSugar', 'Less Sugar')
+            ->set('newScheduleIce', 'Normal Ice')
+            ->call('addDrinkToRecurringSchedule');
+
+        $this->assertDatabaseHas('recurring_schedule_items', [
+            'recurring_schedule_id' => $schedule->id,
+            'drink_item_id' => $drink->id,
+            'quantity' => 10,
+            'sugar_level' => 'Less Sugar',
+        ]);
+    }
+
+    public function test_recurring_order_auto_dispatch_creates_barista_ticket_and_is_idempotent(): void
+    {
+        $admin = User::factory()->create(['role' => 'admin']);
+        $barista = User::factory()->create(['role' => 'barista']);
+        $hq = Branch::where('is_hq', true)->first();
+        $drink = DrinkItem::where('branch_id', $hq->id)->first();
+
+        $schedule = \App\Models\RecurringSchedule::create([
+            'title' => 'Daily HQ Morning Coffee',
+            'branch_id' => $hq->id,
+            'location_detail' => 'Floor 2 Reception',
+            'delivery_time' => '08:30',
+            'is_active' => true,
+            'created_by' => $admin->id,
+        ]);
+
+        \App\Models\RecurringScheduleItem::create([
+            'recurring_schedule_id' => $schedule->id,
+            'drink_item_id' => $drink->id,
+            'quantity' => 10,
+            'sugar_level' => 'Normal Sugar',
+            'ice_level' => 'Normal Ice',
+        ]);
+
+        // Schedule for today
+        \App\Models\RecurringScheduleDate::create([
+            'recurring_schedule_id' => $schedule->id,
+            'delivery_date' => today()->toDateString(),
+            'status' => 'scheduled',
+        ]);
+
+        // Dispatch
+        $service = app(\App\Services\RecurringOrderService::class);
+        $orders = $service->dispatchDueOrders(today());
+
+        $this->assertCount(1, $orders);
+        $order = $orders[0];
+
+        $this->assertEquals('recurring', $order->order_type);
+        $this->assertEquals('approved', $order->status);
+        $this->assertEquals(10, $order->people_count);
+        $this->assertStringContainsString('Floor 2 Reception', $order->notes);
+
+        $this->assertDatabaseHas('drink_order_items', [
+            'drink_order_id' => $order->id,
+            'drink_item_id' => $drink->id,
+            'quantity' => 10,
+        ]);
+
+        // Idempotency: Running dispatch again should NOT create another order for today
+        $repeatOrders = $service->dispatchDueOrders(today());
+        $this->assertCount(0, $repeatOrders);
+        $this->assertEquals(1, \App\Models\DrinkOrder::where('order_type', 'recurring')->count());
+
+        // Barista Kitchen Display sees the order under meeting/scheduled orders
+        Livewire::actingAs($barista)
+            ->test('barista.kitchen-display')
+            ->assertSee('Floor 2 Reception')
+            ->assertSee('08:30 AM')
+            ->assertSee('10')
+            ->assertSee('Standing Order');
+    }
 }

@@ -38,7 +38,12 @@
                     🔄 {{ __('cbvh.extra_badge') }}
                 </span>
             @endif
-            @if($order->order_type === 'meeting' && $order->delivery_time)
+            @if($order->order_type === 'recurring')
+                <span class="px-2.5 py-0.5 rounded-full bg-indigo-600 text-white text-sm font-black">
+                    🗓️ {{ __('cbvh.recurring_badge') }}
+                </span>
+            @endif
+            @if(in_array($order->order_type, ['meeting', 'recurring']) && $order->delivery_time)
                 <span class="px-2.5 py-0.5 rounded-full text-sm font-black {{ $order->delivery_time->isToday() ? 'bg-emerald-600 text-white' : 'bg-white/90 text-[#2C211C]' }}">
                     {{ $order->delivery_time->isToday() ? __('cbvh.today_badge') : __('cbvh.upcoming_badge') }}
                 </span>
