@@ -27,6 +27,7 @@ return [
     'login_id_placeholder' => 'e.g. A100888 or name@company.com',
     'employee_id_placeholder' => 'e.g. A100888',
     'password' => 'Password',
+    'confirm_password' => 'Confirm Password',
     'sign_in' => 'Sign In',
     'signing_in' => 'Signing in...',
     'invalid_credentials' => 'Invalid Employee ID / Email or password.',

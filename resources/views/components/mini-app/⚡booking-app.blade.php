@@ -1155,9 +1155,9 @@ new class extends Component
                     <div class="flex items-center justify-between pt-2 border-t border-[#E8DDD6] dark:border-[#3D2F29]">
                         <span class="text-xs font-bold text-[#2C211C] dark:text-[#F5EDE7]">{{ __('cbvh.quantity') }}</span>
                         <div class="flex items-center space-x-2">
-                            <button type="button" wire:click="$set('drinkQuantity', {{ max(1, (int)$drinkQuantity - 1) }})" class="w-8 h-8 rounded-full border border-[#E8DDD6] dark:border-[#3D2F29] bg-[#FAF6F3] dark:bg-[#1A1412] flex items-center justify-center font-bold text-base cursor-pointer hover:bg-[#E8DDD6] transition">-</button>
-                            <input type="number" min="1" max="99" wire:model.live="drinkQuantity" class="w-14 text-center font-black text-sm py-1 rounded-xl border border-[#E8DDD6] dark:border-[#3D2F29] bg-white dark:bg-[#241C19] text-[#2C211C] dark:text-[#F5EDE7] focus:border-[#9E6B55] focus:outline-hidden" />
-                            <button type="button" wire:click="$set('drinkQuantity', {{ (int)$drinkQuantity + 1 }})" class="w-8 h-8 rounded-full border border-[#E8DDD6] dark:border-[#3D2F29] bg-[#FAF6F3] dark:bg-[#1A1412] flex items-center justify-center font-bold text-base cursor-pointer hover:bg-[#E8DDD6] transition">+</button>
+                            <button type="button" wire:click="$set('drinkQuantity', {{ max(1, (int)$drinkQuantity - 1) }})" class="w-8 h-8 rounded-full border border-[#E8DDD6] dark:border-[#3D2F29] bg-[#FAF6F3] dark:bg-[#1A1412] flex items-center justify-center font-bold text-base cursor-pointer hover:bg-[#E8DDD6] dark:hover:bg-[#3D2F29] transition">-</button>
+                            <input type="number" min="1" max="99" wire:model.live="drinkQuantity" class="w-14 text-center font-black text-sm py-1 rounded-xl border border-[#E8DDD6] dark:border-[#3D2F29] bg-white dark:bg-[#241C19] text-[#2C211C] dark:text-[#F5EDE7] focus:border-[#9E6B55] focus:outline-hidden [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" />
+                            <button type="button" wire:click="$set('drinkQuantity', {{ (int)$drinkQuantity + 1 }})" class="w-8 h-8 rounded-full border border-[#E8DDD6] dark:border-[#3D2F29] bg-[#FAF6F3] dark:bg-[#1A1412] flex items-center justify-center font-bold text-base cursor-pointer hover:bg-[#E8DDD6] dark:hover:bg-[#3D2F29] transition">+</button>
                         </div>
                     </div>
 

@@ -27,6 +27,7 @@ return [
     'login_id_placeholder' => 'ឧទាហរណ៍៖ A100888 ឬ អ៊ីមែល',
     'employee_id_placeholder' => 'ឧទាហរណ៍៖ A100888',
     'password' => 'ពាក្យសម្ងាត់',
+    'confirm_password' => 'បញ្ជាក់ពាក្យសម្ងាត់',
     'sign_in' => 'ចូលប្រព័ន្ធ',
     'signing_in' => 'កំពុងចូល...',
     'invalid_credentials' => 'អត្តលេខ/អ៊ីមែល ឬពាក្យសម្ងាត់មិនត្រឹមត្រូវទេ។',
