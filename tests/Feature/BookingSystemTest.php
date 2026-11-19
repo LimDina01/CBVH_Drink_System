@@ -1787,12 +1787,67 @@ class BookingSystemTest extends TestCase
         $this->assertCount(0, $repeatOrders);
         $this->assertEquals(1, \App\Models\DrinkOrder::where('order_type', 'recurring')->count());
 
-        // Barista Kitchen Display sees the order under meeting/scheduled orders
-        Livewire::actingAs($barista)
+        // Barista Kitchen Display sees the order under instant/quick service orders
+        $baristaComponent = Livewire::actingAs($barista)
             ->test('barista.kitchen-display')
             ->assertSee('Floor 2 Reception')
             ->assertSee('08:30 AM')
             ->assertSee('10')
             ->assertSee('Standing Order');
+
+        // Test Barista workflow: accept -> complete
+        $baristaComponent->call('acceptOrder', $order->id);
+        $this->assertEquals('preparing', $order->fresh()->status);
+
+        $baristaComponent->call('completeOrder', $order->id);
+        $this->assertEquals('completed', $order->fresh()->status);
+    }
+
+    public function test_admin_can_stage_calendar_dates_and_save_with_confirmation(): void
+    {
+        $admin = User::factory()->create(['role' => 'admin']);
+        $hq = Branch::where('is_hq', true)->first();
+
+        $schedule = \App\Models\RecurringSchedule::firstOrCreate([
+            'title' => 'Daily Standing Order',
+        ], [
+            'branch_id' => $hq->id,
+            'delivery_time' => '08:30',
+            'is_active' => true,
+            'created_by' => $admin->id,
+        ]);
+
+        $testDate = sprintf('%04d-%02d-15', now()->year, now()->month);
+
+        $component = Livewire::actingAs($admin)
+            ->test('admin.⚡approval-portal');
+
+        // Toggle date in staging
+        $component->call('toggleScheduleDate', $testDate)
+            ->assertSet('calendarDirty', true);
+
+        // Save calendar dates
+        $component->call('saveScheduleCalendarDates')
+            ->assertSet('calendarDirty', false);
+
+        // Date should now be in DB
+        $this->assertDatabaseHas('recurring_schedule_dates', [
+            'recurring_schedule_id' => $schedule->id,
+            'delivery_date' => $testDate,
+            'status' => 'scheduled',
+        ]);
+
+        // Toggle off and discard
+        $component->call('toggleScheduleDate', $testDate)
+            ->assertSet('calendarDirty', true)
+            ->call('discardCalendarChanges')
+            ->assertSet('calendarDirty', false);
+
+        // Date should still be in DB because changes were discarded
+        $this->assertDatabaseHas('recurring_schedule_dates', [
+            'recurring_schedule_id' => $schedule->id,
+            'delivery_date' => $testDate,
+            'status' => 'scheduled',
+        ]);
     }
 }

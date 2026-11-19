@@ -95,10 +95,8 @@ new class extends Component
     public int $calendarYear = 0;
     public int $calendarMonth = 0;
     public array $scheduleItems = [];
-    public ?int $newScheduleDrinkId = null;
-    public int $newScheduleQuantity = 10;
-    public string $newScheduleSugar = 'Normal Sugar';
-    public string $newScheduleIce = 'Normal Ice';
+    public array $stagedScheduleDates = [];
+    public bool $calendarDirty = false;
 
     // --- Settings ---
     public $enforceWorkingHours = true;
@@ -892,10 +890,7 @@ new class extends Component
         $this->scheduleIsActive = (bool) $first->is_active;
         $this->scheduleNotes = $first->notes ?? '';
         $this->syncScheduleItemsArray($first);
-
-        if ($this->newScheduleDrinkId === null) {
-            $this->newScheduleDrinkId = DrinkItem::first()?->id;
-        }
+        $this->syncStagedCalendarDates();
     }
 
     protected function syncScheduleItemsArray(RecurringSchedule $schedule): void
@@ -971,6 +966,7 @@ new class extends Component
         $d = \Carbon\Carbon::createFromDate($this->calendarYear, $this->calendarMonth, 1)->subMonth();
         $this->calendarYear = $d->year;
         $this->calendarMonth = $d->month;
+        $this->syncStagedCalendarDates();
     }
 
     public function nextMonth(): void
@@ -978,14 +974,85 @@ new class extends Component
         $d = \Carbon\Carbon::createFromDate($this->calendarYear, $this->calendarMonth, 1)->addMonth();
         $this->calendarYear = $d->year;
         $this->calendarMonth = $d->month;
+        $this->syncStagedCalendarDates();
+    }
+
+    public function syncStagedCalendarDates(): void
+    {
+        if (!$this->scheduleId) return;
+
+        $dbDates = RecurringScheduleDate::where('recurring_schedule_id', $this->scheduleId)
+            ->whereYear('delivery_date', $this->calendarYear)
+            ->whereMonth('delivery_date', $this->calendarMonth)
+            ->whereIn('status', ['scheduled', 'generated'])
+            ->get()
+            ->pluck('delivery_date')
+            ->map(fn($d) => $d->toDateString())
+            ->toArray();
+
+        $this->stagedScheduleDates = array_fill_keys($dbDates, true);
+        $this->calendarDirty = false;
     }
 
     public function toggleScheduleDate(string $dateStr): void
     {
+        if (!empty($this->stagedScheduleDates[$dateStr])) {
+            unset($this->stagedScheduleDates[$dateStr]);
+        } else {
+            $this->stagedScheduleDates[$dateStr] = true;
+        }
+        $this->calendarDirty = true;
+    }
+
+    public function saveScheduleCalendarDates(): void
+    {
         $schedule = RecurringSchedule::find($this->scheduleId);
         if (!$schedule) return;
 
-        app(RecurringOrderService::class)->toggleDate($schedule, $dateStr);
+        $existing = RecurringScheduleDate::where('recurring_schedule_id', $schedule->id)
+            ->whereYear('delivery_date', $this->calendarYear)
+            ->whereMonth('delivery_date', $this->calendarMonth)
+            ->get()
+            ->keyBy(fn($d) => $d->delivery_date->toDateString());
+
+        $stagedActive = array_keys(array_filter($this->stagedScheduleDates));
+
+        // Dates removed from staging
+        foreach ($existing as $dateStr => $rec) {
+            if (!in_array($dateStr, $stagedActive, true)) {
+                if ($rec->status === 'generated') {
+                    $rec->update(['status' => 'off']);
+                } else {
+                    $rec->delete();
+                }
+            }
+        }
+
+        // Dates added or re-activated in staging
+        foreach ($stagedActive as $dateStr) {
+            if (isset($existing[$dateStr])) {
+                if ($existing[$dateStr]->status !== 'generated') {
+                    $existing[$dateStr]->update(['status' => 'scheduled']);
+                }
+            } else {
+                RecurringScheduleDate::create([
+                    'recurring_schedule_id' => $schedule->id,
+                    'delivery_date' => $dateStr,
+                    'status' => 'scheduled',
+                ]);
+            }
+        }
+
+        $this->syncStagedCalendarDates();
+        $this->flashMessage = __('cbvh.calendar_saved_successfully');
+        $this->flashType = 'success';
+    }
+
+    public function discardCalendarChanges(): void
+    {
+        $this->syncStagedCalendarDates();
+        $this->flashMessage = __('cbvh.calendar_reverted');
+        $this->flashType = 'info';
     }
 
     public function prefillScheduleWorkingDays(bool $includeSaturday = false): void
@@ -994,6 +1061,7 @@ new class extends Component
         if (!$schedule) return;
 
         app(RecurringOrderService::class)->prefillMonth($schedule, $this->calendarYear, $this->calendarMonth, $includeSaturday);
+        $this->syncStagedCalendarDates();
         $this->flashMessage = $includeSaturday ? "Prefilled Mon – Sat for this month." : "Prefilled Mon – Fri for this month.";
         $this->flashType = 'success';
     }
@@ -1004,6 +1072,7 @@ new class extends Component
         if (!$schedule) return;
 
         $copied = app(RecurringOrderService::class)->copyPreviousMonth($schedule, $this->calendarYear, $this->calendarMonth);
+        $this->syncStagedCalendarDates();
         $this->flashMessage = "Copied {$copied} scheduled days from previous month.";
         $this->flashType = 'success';
     }
@@ -1014,6 +1083,7 @@ new class extends Component
         if (!$schedule) return;
 
         app(RecurringOrderService::class)->clearMonth($schedule, $this->calendarYear, $this->calendarMonth);
+        $this->syncStagedCalendarDates();
         $this->flashMessage = "Cleared schedule for this month.";
         $this->flashType = 'info';
     }
@@ -1208,7 +1278,7 @@ new class extends Component
                 ->keyBy(fn($d) => $d->delivery_date->toDateString());
         }
 
-        $activeDaysThisMonth = $monthScheduledDates->whereIn('status', ['scheduled', 'generated'])->count();
+        $activeDaysThisMonth = count(array_filter($this->stagedScheduleDates));
         $dailyCups = array_sum(array_column($this->scheduleItems, 'quantity'));
         $totalMonthCups = $activeDaysThisMonth * $dailyCups;
 
@@ -2254,6 +2324,7 @@ new class extends Component
                                             </div>
                                             @if(count($scheduleItems) > 1)
                                                 <button type="button" wire:click="removeScheduleItemRow({{ $idx }})"
+                                                        wire:confirm="{{ __('cbvh.confirm_remove_drink') }}"
                                                         class="w-7 h-7 shrink-0 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-600 text-xs font-bold transition flex items-center justify-center cursor-pointer"
                                                         title="Remove this drink">
                                                     ✕
@@ -2299,7 +2370,9 @@ new class extends Component
 
                         <!-- Single Unified Submit Button -->
                         <div class="space-y-2">
-                            <button type="submit" class="w-full py-3 bg-[#9E6B55] hover:bg-[#835440] text-white font-bold text-xs rounded-xl shadow-xs transition cursor-pointer flex items-center justify-center gap-2">
+                            <button type="submit"
+                                    wire:confirm="{{ __('cbvh.confirm_save_schedule') }}"
+                                    class="w-full py-3 bg-[#9E6B55] hover:bg-[#835440] text-white font-bold text-xs rounded-xl shadow-xs transition cursor-pointer flex items-center justify-center gap-2">
                                 <span wire:loading.remove wire:target="saveRecurringSchedule">💾 {{ __('cbvh.save_schedule') }}</span>
                                 <span wire:loading wire:target="saveRecurringSchedule">⏳ Saving Schedule & Drink Package...</span>
                             </button>
@@ -2344,26 +2417,56 @@ new class extends Component
                         <!-- Quick Actions Bar -->
                         <div class="flex flex-wrap items-center gap-2 pt-1">
                             <button type="button" wire:click="prefillScheduleWorkingDays(false)"
+                                    wire:confirm="{{ __('cbvh.confirm_prefill_mon_fri') }}"
                                     class="px-3 py-1.5 rounded-xl bg-[#FAF6F3] dark:bg-[#1A1412] border border-[#E8DDD6] dark:border-[#3D2F29] text-[#2C211C] dark:text-[#F5EDE7] hover:bg-[#9E6B55] hover:text-white hover:border-[#9E6B55] text-xs font-bold transition cursor-pointer flex items-center gap-1 shadow-2xs">
                                 ⚡ {{ __('cbvh.prefill_mon_fri') }}
                             </button>
                             <button type="button" wire:click="prefillScheduleWorkingDays(true)"
+                                    wire:confirm="{{ __('cbvh.confirm_prefill_mon_sat') }}"
                                     class="px-3 py-1.5 rounded-xl bg-[#FAF6F3] dark:bg-[#1A1412] border border-[#E8DDD6] dark:border-[#3D2F29] text-[#2C211C] dark:text-[#F5EDE7] hover:bg-[#9E6B55] hover:text-white hover:border-[#9E6B55] text-xs font-bold transition cursor-pointer flex items-center gap-1 shadow-2xs">
                                 ⚡ {{ __('cbvh.prefill_mon_sat') }}
                             </button>
                             <button type="button" wire:click="copyScheduleFromPreviousMonth"
+                                    wire:confirm="{{ __('cbvh.confirm_copy_previous_month') }}"
                                     class="px-3 py-1.5 rounded-xl bg-[#FAF6F3] dark:bg-[#1A1412] border border-[#E8DDD6] dark:border-[#3D2F29] text-[#2C211C] dark:text-[#F5EDE7] hover:bg-[#9E6B55] hover:text-white hover:border-[#9E6B55] text-xs font-bold transition cursor-pointer flex items-center gap-1 shadow-2xs">
                                 📋 {{ __('cbvh.copy_previous_month') }}
                             </button>
                             <button type="button" wire:click="clearScheduleCurrentMonth"
-                                    wire:confirm="Are you sure you want to clear all scheduled days for this month?"
+                                    wire:confirm="{{ __('cbvh.confirm_clear_month') }}"
                                     class="px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold transition cursor-pointer flex items-center gap-1 shadow-2xs ml-auto">
                                 🗑️ {{ __('cbvh.clear_month') }}
                             </button>
                         </div>
 
-                        <div class="text-[11px] text-[#7C6A60] dark:text-[#BBA79D] font-medium flex items-center gap-1.5">
-                            <span>{{ __('cbvh.dates_auto_save') }}</span>
+                        <!-- Calendar Save & Status Bar -->
+                        <div class="flex flex-wrap items-center justify-between gap-3 p-3 rounded-xl {{ $calendarDirty ? 'bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800' : 'bg-[#FAF6F3] dark:bg-[#1A1412] border border-[#E8DDD6] dark:border-[#3D2F29]' }} transition">
+                            <div class="flex items-center gap-2">
+                                @if($calendarDirty)
+                                    <span class="inline-block w-2.5 h-2.5 rounded-full bg-amber-500 animate-ping"></span>
+                                    <span class="text-xs font-bold text-amber-900 dark:text-amber-200">
+                                        ⚠️ {{ __('cbvh.unsaved_calendar_changes') }} ({{ $activeDaysThisMonth }} {{ __('cbvh.days_active') }})
+                                    </span>
+                                @else
+                                    <span class="text-emerald-600 dark:text-emerald-400 font-bold text-xs flex items-center gap-1">
+                                        <span>✓</span> All calendar dates saved in database
+                                    </span>
+                                @endif
+                            </div>
+
+                            <div class="flex items-center gap-2">
+                                @if($calendarDirty)
+                                    <button type="button" wire:click="discardCalendarChanges"
+                                            class="px-3 py-1.5 rounded-xl border border-[#E8DDD6] dark:border-[#3D2F29] bg-white dark:bg-[#241C19] text-[#7C6A60] dark:text-[#BBA79D] text-xs font-bold hover:bg-rose-50 hover:text-rose-600 transition cursor-pointer">
+                                        ↩️ {{ __('cbvh.discard_changes') }}
+                                    </button>
+                                @endif
+                                <button type="button" wire:click="saveScheduleCalendarDates"
+                                        wire:confirm="{{ __('cbvh.confirm_save_calendar') }}"
+                                        class="px-4 py-1.5 rounded-xl {{ $calendarDirty ? 'bg-[#9E6B55] hover:bg-[#835440] text-white shadow-xs font-black' : 'bg-white dark:bg-[#241C19] text-[#7C6A60] dark:text-[#BBA79D] border border-[#E8DDD6] dark:border-[#3D2F29] font-bold' }} text-xs transition cursor-pointer flex items-center gap-1.5">
+                                    <span wire:loading.remove wire:target="saveScheduleCalendarDates">💾 {{ __('cbvh.save_calendar_schedule') }}</span>
+                                    <span wire:loading wire:target="saveScheduleCalendarDates">⏳ Saving...</span>
+                                </button>
+                            </div>
                         </div>
 
                         <!-- 7-Column Calendar Grid -->
@@ -2394,7 +2497,9 @@ new class extends Component
                                         $isSunday = ($curCarbon->dayOfWeek === 0);
                                         $isToday = ($dateStr === today()->toDateString());
                                         $schedRec = $monthScheduledDates->get($dateStr);
-                                        $status = $schedRec ? $schedRec->status : 'off';
+                                        $isGenerated = ($schedRec && $schedRec->status === 'generated');
+                                        $isScheduled = !empty($stagedScheduleDates[$dateStr]);
+                                        $status = $isGenerated ? 'generated' : ($isScheduled ? 'scheduled' : 'off');
                                     @endphp
 
                                     <button type="button"
@@ -2473,6 +2578,7 @@ new class extends Component
                         </div>
 
                         <button type="button" wire:click="dispatchTodayOrderNow"
+                                wire:confirm="{{ __('cbvh.confirm_generate_today') }}"
                                 class="px-4 py-2.5 bg-[#9E6B55] hover:bg-[#835440] text-white font-bold text-xs rounded-xl shadow-xs transition cursor-pointer flex items-center gap-1.5 whitespace-nowrap">
                             ⚡ {{ __('cbvh.generate_today_now') }}
                         </button>

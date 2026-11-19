@@ -171,14 +171,28 @@
                 👍 {{ __('cbvh.btn_start_making') }}
             </button>
         @elseif($order->status === 'preparing')
-            <button wire:click="markInDelivery({{ $order->id }})"
-                    class="w-full py-4 bg-blue-600 hover:bg-blue-700 active:scale-[0.98] text-white font-black text-lg rounded-2xl shadow-md transition cursor-pointer touch-manipulation">
-                ✅ {{ __('cbvh.btn_out_for_delivery') }}
-            </button>
+            @if($order->order_type === 'recurring')
+                <button wire:click="completeOrder({{ $order->id }})"
+                        class="w-full py-4 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] text-white font-black text-lg rounded-2xl shadow-md transition cursor-pointer touch-manipulation">
+                    🏁 {{ __('cbvh.btn_delivered_complete') }}
+                </button>
+            @else
+                <button wire:click="markInDelivery({{ $order->id }})"
+                        class="w-full py-4 bg-blue-600 hover:bg-blue-700 active:scale-[0.98] text-white font-black text-lg rounded-2xl shadow-md transition cursor-pointer touch-manipulation">
+                    ✅ {{ __('cbvh.btn_out_for_delivery') }}
+                </button>
+            @endif
         @elseif($order->status === 'in_delivery')
-            <div class="p-4 rounded-2xl bg-blue-50 border-2 border-blue-300 text-center text-base font-black text-blue-900">
-                🚚 {{ __('cbvh.delivery_done_badge') }}
-            </div>
+            @if($order->order_type === 'recurring')
+                <button wire:click="completeOrder({{ $order->id }})"
+                        class="w-full py-4 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] text-white font-black text-lg rounded-2xl shadow-md transition cursor-pointer touch-manipulation">
+                    🏁 {{ __('cbvh.btn_delivered_complete') }}
+                </button>
+            @else
+                <div class="p-4 rounded-2xl bg-blue-50 border-2 border-blue-300 text-center text-base font-black text-blue-900">
+                    🚚 {{ __('cbvh.delivery_done_badge') }}
+                </div>
+            @endif
         @endif
     </div>
 </div>

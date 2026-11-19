@@ -45,7 +45,18 @@ new class extends Component
     public function markInDelivery($orderId)
     {
         $order = DrinkOrder::find($orderId);
-        if ($order && $order->status === 'preparing') {
+        if ($order && in_array($order->status, ['preparing', 'in_delivery'])) {
+            if ($order->order_type === 'recurring') {
+                $order->update([
+                    'status' => 'completed',
+                    'ready_at' => now(),
+                    'in_delivery_at' => now(),
+                    'completed_at' => now(),
+                ]);
+                $this->flashMessage = "#{$orderId} — " . __('cbvh.status_completed');
+                return;
+            }
+
             $order->update([
                 'status' => 'in_delivery',
                 'ready_at' => now(),
@@ -54,6 +65,20 @@ new class extends Component
 
             app(TelegramService::class)->notifyUserOrderInDelivery($order);
             $this->flashMessage = "#{$orderId} — " . __('cbvh.status_in_delivery');
+        }
+    }
+
+    public function completeOrder($orderId)
+    {
+        $order = DrinkOrder::find($orderId);
+        if ($order && in_array($order->status, ['approved', 'preparing', 'in_delivery'])) {
+            $order->update([
+                'status' => 'completed',
+                'ready_at' => $order->ready_at ?? now(),
+                'in_delivery_at' => $order->in_delivery_at ?? now(),
+                'completed_at' => now(),
+            ]);
+            $this->flashMessage = "#{$orderId} — " . __('cbvh.status_completed');
         }
     }
 
@@ -75,8 +100,8 @@ new class extends Component
             ->orderBy('id', 'asc')
             ->get();
 
-        $instantOrders = $orders->whereIn('order_type', ['instant', 'extend']);
-        $meetingOrders = $orders->whereIn('order_type', ['meeting', 'recurring']);
+        $instantOrders = $orders->whereIn('order_type', ['instant', 'extend', 'recurring']);
+        $meetingOrders = $orders->where('order_type', 'meeting');
 
         $approvedOrders = $orders->where('status', 'approved');
         $newCount = $approvedOrders->count();
@@ -84,7 +109,7 @@ new class extends Component
 
         if ($latestApproved && $latestApproved->id > $this->lastKnownOrderId) {
             $this->lastKnownOrderId = (int) $latestApproved->id;
-            $orderType = in_array($latestApproved->order_type, ['meeting', 'recurring']) ? 'meeting' : 'quick';
+            $orderType = ($latestApproved->order_type === 'meeting') ? 'meeting' : 'quick';
             $this->dispatch('new-barista-order', orderType: $orderType);
         }
 
