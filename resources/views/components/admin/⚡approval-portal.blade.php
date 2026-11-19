@@ -1027,6 +1027,16 @@ new class extends Component
         }
     }
 
+    public function updatedScheduleBranchId($value): void
+    {
+        $firstDrink = DrinkItem::where('branch_id', $value)
+            ->where('is_available', true)
+            ->first();
+        if ($firstDrink) {
+            $this->newScheduleDrinkId = $firstDrink->id;
+        }
+    }
+
     public function with()
     {
         DrinkOrder::autoCompleteExpiredDeliveries();
@@ -1158,7 +1168,14 @@ new class extends Component
             : 0;
         $totalMonthCups = $activeDaysThisMonth * $dailyCups;
 
-        $allAvailableDrinks = DrinkItem::where('is_available', true)->orderBy('name')->get();
+        $drinksQuery = DrinkItem::where('is_available', true);
+        if ($this->scheduleBranchId) {
+            $drinksQuery->where('branch_id', $this->scheduleBranchId);
+        }
+        $allAvailableDrinks = $drinksQuery->orderBy('name')->get()->unique('name')->values();
+        if ($allAvailableDrinks->isEmpty()) {
+            $allAvailableDrinks = DrinkItem::where('is_available', true)->orderBy('name')->get()->unique('name')->values();
+        }
 
         return [
             'branches' => Branch::all(),
@@ -2079,7 +2096,7 @@ new class extends Component
                                     <label class="block text-[11px] font-bold text-[#7C6A60] dark:text-[#BBA79D] mb-1">
                                         {{ __('cbvh.branch') }}
                                     </label>
-                                    <select wire:model="scheduleBranchId" class="w-full text-xs p-2.5 rounded-xl border border-[#E8DDD6] dark:border-[#3D2F29] bg-[#FAF6F3] dark:bg-[#1A1412] text-[#2C211C] dark:text-[#F5EDE7] font-semibold cursor-pointer">
+                                    <select wire:model.live="scheduleBranchId" class="w-full text-xs p-2.5 rounded-xl border border-[#E8DDD6] dark:border-[#3D2F29] bg-[#FAF6F3] dark:bg-[#1A1412] text-[#2C211C] dark:text-[#F5EDE7] font-semibold cursor-pointer">
                                         @foreach($branches as $b)
                                             <option value="{{ $b->id }}">{{ $b->name }} {{ $b->is_hq ? '(HQ)' : '' }}</option>
                                         @endforeach
