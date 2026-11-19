@@ -8,9 +8,10 @@ git checkout -- database/seeders/DatabaseSeeder.php 2>/dev/null || true
 git pull origin main
 
 # 2. Ensure deploy user & web server have write access
+mkdir -p storage/logs storage/framework/cache storage/framework/sessions storage/framework/views
+touch storage/logs/laravel.log
 sudo chown -R $USER:www-data storage bootstrap/cache database 2>/dev/null || true
-sudo chmod -R 777 storage bootstrap/cache 2>/dev/null || true
-sudo chmod -R 775 database 2>/dev/null || true
+sudo chmod -R 777 storage bootstrap/cache database 2>/dev/null || true
 
 # 3. Install PHP production dependencies (skips dev tools)
 composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader
@@ -33,10 +34,11 @@ php artisan config:cache
 php artisan route:cache
 php artisan view:cache
 
-# 7. Set strict production permissions
+# 7. Ensure SQLite permanent WAL mode and permissions
+php artisan tinker --execute="DB::statement('PRAGMA journal_mode=WAL;');" || true
 sudo chown -R $USER:www-data storage bootstrap/cache database
-sudo chmod -R 777 storage bootstrap/cache
-sudo chmod -R 775 database
+sudo chmod -R 777 storage bootstrap/cache database
+sudo chmod 666 database/database.sqlite* 2>/dev/null || true
 
 # 8. Reload PHP-FPM
 sudo systemctl reload php8.5-fpm || sudo systemctl reload php8.4-fpm || sudo systemctl reload php8.3-fpm || sudo systemctl reload php-fpm || true
