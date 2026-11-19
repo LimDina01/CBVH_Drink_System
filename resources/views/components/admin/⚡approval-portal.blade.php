@@ -1334,6 +1334,29 @@ new class extends Component
 <div @if($activeSection === 'reports') wire:poll.8s @endif
      x-data="{
         confirmLogout: false,
+        confirmDialog: {
+            open: false,
+            title: '{{ __('cbvh.confirm_action') }}',
+            message: '',
+            confirmText: '{{ __('cbvh.confirm') }}',
+            action: null,
+        },
+        askConfirm(message, actionCallback, title = '{{ __('cbvh.confirm_action') }}', confirmText = '{{ __('cbvh.confirm') }}') {
+            this.confirmDialog = {
+                open: true,
+                title: title,
+                message: message,
+                confirmText: confirmText,
+                action: actionCallback,
+            };
+        },
+        runConfirmed() {
+            const fn = this.confirmDialog.action;
+            this.confirmDialog.open = false;
+            if (typeof fn === 'function') {
+                fn();
+            }
+        },
         soundOn: false,
         audioCtx: null,
         unlockAudio() {
@@ -1741,12 +1764,13 @@ new class extends Component
                                             Barista
                                         </button>
                                     @elseif(in_array($order->status, ['approved', 'preparing', 'in_delivery']))
-                                        <button wire:click="markOrderCompleted({{ $order->id }})"
-                                                @if(in_array($order->status, ['approved', 'preparing']))
-                                                    wire:confirm="⚠️ Warning: Order #{{ $order->id }} is currently {{ strtoupper($order->status) }} by the barista. Are you sure you want to override and complete it?"
-                                                @else
-                                                    wire:confirm="Mark Order #{{ $order->id }} as completed?"
-                                                @endif
+                                        @php
+                                            $closeWarning = in_array($order->status, ['approved', 'preparing'])
+                                                ? "⚠️ Warning: Order #{$order->id} is currently " . strtoupper($order->status) . " by the barista. Are you sure you want to override and complete it?"
+                                                : "Mark Order #{$order->id} as completed?";
+                                        @endphp
+                                        <button type="button"
+                                                @click.prevent="askConfirm('{{ addslashes($closeWarning) }}', () => $wire.markOrderCompleted({{ $order->id }}))"
                                                 class="px-2.5 py-1 bg-[#FAF6F3] border border-[#E8DDD6] text-[#2C211C] rounded-lg text-[10px] font-bold cursor-pointer hover:bg-[#F5EDE7]">
                                             {{ __('cbvh.close_order') }}
                                         </button>
@@ -2150,15 +2174,15 @@ new class extends Component
                                         ✏️ {{ __('cbvh.edit_drink') }}
                                     </button>
                                     @if(!empty($drink->branch_items))
-                                        <button type="button" wire:click="deleteDrinkGroup('{{ addslashes($drink->name) }}')"
-                                                wire:confirm="{{ __('cbvh.confirm_delete_drink') }}"
+                                        <button type="button"
+                                                @click.prevent="askConfirm('{{ __('cbvh.confirm_delete_drink') }}', () => $wire.deleteDrinkGroup('{{ addslashes($drink->name) }}'))"
                                                 class="p-1.5 rounded-xl bg-rose-50 dark:bg-rose-950/40 text-rose-600 hover:bg-rose-100 transition cursor-pointer text-xs"
                                                 title="Delete Drink Across All Branches">
                                             🗑️
                                         </button>
                                     @else
-                                        <button type="button" wire:click="deleteDrink({{ $drink->id }})"
-                                                wire:confirm="{{ __('cbvh.confirm_delete_drink') }}"
+                                        <button type="button"
+                                                @click.prevent="askConfirm('{{ __('cbvh.confirm_delete_drink') }}', () => $wire.deleteDrink({{ $drink->id }}))"
                                                 class="p-1.5 rounded-xl bg-rose-50 dark:bg-rose-950/40 text-rose-600 hover:bg-rose-100 transition cursor-pointer text-xs"
                                                 title="Delete Drink">
                                             🗑️
@@ -2323,8 +2347,8 @@ new class extends Component
                                                 </select>
                                             </div>
                                             @if(count($scheduleItems) > 1)
-                                                <button type="button" wire:click="removeScheduleItemRow({{ $idx }})"
-                                                        wire:confirm="{{ __('cbvh.confirm_remove_drink') }}"
+                                                <button type="button"
+                                                        @click.prevent="askConfirm('{{ __('cbvh.confirm_remove_drink') }}', () => $wire.removeScheduleItemRow({{ $idx }}))"
                                                         class="w-7 h-7 shrink-0 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-600 text-xs font-bold transition flex items-center justify-center cursor-pointer"
                                                         title="Remove this drink">
                                                     ✕
@@ -2370,8 +2394,8 @@ new class extends Component
 
                         <!-- Single Unified Submit Button -->
                         <div class="space-y-2">
-                            <button type="submit"
-                                    wire:confirm="{{ __('cbvh.confirm_save_schedule') }}"
+                            <button type="button"
+                                    @click.prevent="askConfirm('{{ __('cbvh.confirm_save_schedule') }}', () => $wire.saveRecurringSchedule())"
                                     class="w-full py-3 bg-[#9E6B55] hover:bg-[#835440] text-white font-bold text-xs rounded-xl shadow-xs transition cursor-pointer flex items-center justify-center gap-2">
                                 <span wire:loading.remove wire:target="saveRecurringSchedule">💾 {{ __('cbvh.save_schedule') }}</span>
                                 <span wire:loading wire:target="saveRecurringSchedule">⏳ Saving Schedule & Drink Package...</span>
@@ -2416,23 +2440,23 @@ new class extends Component
 
                         <!-- Quick Actions Bar -->
                         <div class="flex flex-wrap items-center gap-2 pt-1">
-                            <button type="button" wire:click="prefillScheduleWorkingDays(false)"
-                                    wire:confirm="{{ __('cbvh.confirm_prefill_mon_fri') }}"
+                            <button type="button"
+                                    @click.prevent="askConfirm('{{ __('cbvh.confirm_prefill_mon_fri') }}', () => $wire.prefillScheduleWorkingDays(false))"
                                     class="px-3 py-1.5 rounded-xl bg-[#FAF6F3] dark:bg-[#1A1412] border border-[#E8DDD6] dark:border-[#3D2F29] text-[#2C211C] dark:text-[#F5EDE7] hover:bg-[#9E6B55] hover:text-white hover:border-[#9E6B55] text-xs font-bold transition cursor-pointer flex items-center gap-1 shadow-2xs">
                                 ⚡ {{ __('cbvh.prefill_mon_fri') }}
                             </button>
-                            <button type="button" wire:click="prefillScheduleWorkingDays(true)"
-                                    wire:confirm="{{ __('cbvh.confirm_prefill_mon_sat') }}"
+                            <button type="button"
+                                    @click.prevent="askConfirm('{{ __('cbvh.confirm_prefill_mon_sat') }}', () => $wire.prefillScheduleWorkingDays(true))"
                                     class="px-3 py-1.5 rounded-xl bg-[#FAF6F3] dark:bg-[#1A1412] border border-[#E8DDD6] dark:border-[#3D2F29] text-[#2C211C] dark:text-[#F5EDE7] hover:bg-[#9E6B55] hover:text-white hover:border-[#9E6B55] text-xs font-bold transition cursor-pointer flex items-center gap-1 shadow-2xs">
                                 ⚡ {{ __('cbvh.prefill_mon_sat') }}
                             </button>
-                            <button type="button" wire:click="copyScheduleFromPreviousMonth"
-                                    wire:confirm="{{ __('cbvh.confirm_copy_previous_month') }}"
+                            <button type="button"
+                                    @click.prevent="askConfirm('{{ __('cbvh.confirm_copy_previous_month') }}', () => $wire.copyScheduleFromPreviousMonth())"
                                     class="px-3 py-1.5 rounded-xl bg-[#FAF6F3] dark:bg-[#1A1412] border border-[#E8DDD6] dark:border-[#3D2F29] text-[#2C211C] dark:text-[#F5EDE7] hover:bg-[#9E6B55] hover:text-white hover:border-[#9E6B55] text-xs font-bold transition cursor-pointer flex items-center gap-1 shadow-2xs">
                                 📋 {{ __('cbvh.copy_previous_month') }}
                             </button>
-                            <button type="button" wire:click="clearScheduleCurrentMonth"
-                                    wire:confirm="{{ __('cbvh.confirm_clear_month') }}"
+                            <button type="button"
+                                    @click.prevent="askConfirm('{{ __('cbvh.confirm_clear_month') }}', () => $wire.clearScheduleCurrentMonth())"
                                     class="px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold transition cursor-pointer flex items-center gap-1 shadow-2xs ml-auto">
                                 🗑️ {{ __('cbvh.clear_month') }}
                             </button>
@@ -2460,8 +2484,8 @@ new class extends Component
                                         ↩️ {{ __('cbvh.discard_changes') }}
                                     </button>
                                 @endif
-                                <button type="button" wire:click="saveScheduleCalendarDates"
-                                        wire:confirm="{{ __('cbvh.confirm_save_calendar') }}"
+                                <button type="button"
+                                        @click.prevent="askConfirm('{{ __('cbvh.confirm_save_calendar') }}', () => $wire.saveScheduleCalendarDates())"
                                         class="px-4 py-1.5 rounded-xl {{ $calendarDirty ? 'bg-[#9E6B55] hover:bg-[#835440] text-white shadow-xs font-black' : 'bg-white dark:bg-[#241C19] text-[#7C6A60] dark:text-[#BBA79D] border border-[#E8DDD6] dark:border-[#3D2F29] font-bold' }} text-xs transition cursor-pointer flex items-center gap-1.5">
                                     <span wire:loading.remove wire:target="saveScheduleCalendarDates">💾 {{ __('cbvh.save_calendar_schedule') }}</span>
                                     <span wire:loading wire:target="saveScheduleCalendarDates">⏳ Saving...</span>
@@ -2577,8 +2601,8 @@ new class extends Component
                             </p>
                         </div>
 
-                        <button type="button" wire:click="dispatchTodayOrderNow"
-                                wire:confirm="{{ __('cbvh.confirm_generate_today') }}"
+                        <button type="button"
+                                @click.prevent="askConfirm('{{ __('cbvh.confirm_generate_today') }}', () => $wire.dispatchTodayOrderNow())"
                                 class="px-4 py-2.5 bg-[#9E6B55] hover:bg-[#835440] text-white font-bold text-xs rounded-xl shadow-xs transition cursor-pointer flex items-center gap-1.5 whitespace-nowrap">
                             ⚡ {{ __('cbvh.generate_today_now') }}
                         </button>
@@ -3009,6 +3033,42 @@ new class extends Component
             </div>
         </div>
     @endif
+
+    <!-- Simple Custom In-App Confirmation Prompt (Replaces browser window.confirm) -->
+    <div x-show="confirmDialog.open"
+         x-cloak
+         @click.self="confirmDialog.open = false"
+         @keydown.escape.window="confirmDialog.open = false"
+         class="fixed inset-0 bg-[#2C211C]/50 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+        <div class="bg-white dark:bg-[#241C19] w-full max-w-sm rounded-2xl p-5 border border-[#E8DDD6] dark:border-[#3D2F29] shadow-xl space-y-4">
+            <div class="flex items-start gap-3">
+                <div class="w-10 h-10 rounded-xl bg-[#FAF6F3] dark:bg-[#1A1412] border border-[#E8DDD6] dark:border-[#3D2F29] text-[#9E6B55] flex items-center justify-center text-xl shrink-0">
+                    ⚠️
+                </div>
+                <div class="space-y-1 flex-1">
+                    <h3 class="text-sm font-bold text-[#2C211C] dark:text-[#F5EDE7]" x-text="confirmDialog.title">
+                        {{ __('cbvh.confirm_action') }}
+                    </h3>
+                    <p class="text-xs text-[#7C6A60] dark:text-[#BBA79D]" x-text="confirmDialog.message">
+                    </p>
+                </div>
+            </div>
+
+            <div class="flex items-center justify-end gap-2 pt-2 border-t border-[#E8DDD6]/60 dark:border-[#3D2F29]/60">
+                <button type="button"
+                        @click="confirmDialog.open = false"
+                        class="px-3.5 py-2 rounded-xl bg-[#FAF6F3] dark:bg-[#1A1412] border border-[#E8DDD6] dark:border-[#3D2F29] text-[#2C211C] dark:text-[#F5EDE7] font-bold text-xs hover:bg-[#F5EDE7] dark:hover:bg-[#2A201C] transition cursor-pointer">
+                    {{ __('cbvh.cancel') }}
+                </button>
+                <button type="button"
+                        @click="runConfirmed()"
+                        class="px-4 py-2 rounded-xl bg-[#9E6B55] hover:bg-[#835440] text-white font-bold text-xs shadow-xs transition cursor-pointer"
+                        x-text="confirmDialog.confirmText">
+                    {{ __('cbvh.confirm') }}
+                </button>
+            </div>
+        </div>
+    </div>
 
     <x-logout-confirm-modal mode="form" />
 </div>

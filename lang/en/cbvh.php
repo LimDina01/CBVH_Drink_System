@@ -51,6 +51,8 @@ return [
     'extend_badge' => 'Urgent Add-On / Replacement',
     'extending_order' => 'Extending Order #:id',
     'cancel' => 'Cancel',
+    'confirm' => 'Confirm',
+    'confirm_action' => 'Confirmation',
     'reason' => 'Reason',
     'reason_spilled' => 'Spilled',
     'reason_extra_guests' => 'Extra Guests',

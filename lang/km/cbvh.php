@@ -51,6 +51,8 @@ return [
     'extend_badge' => 'បន្ថែមបន្ទាន់ / ជំនួស',
     'extending_order' => 'បន្ថែមលើការកម្ម៉ង់ #:id',
     'cancel' => 'បោះបង់',
+    'confirm' => 'យល់ព្រម',
+    'confirm_action' => 'ការបញ្ជាក់',
     'reason' => 'មូលហេតុ',
     'reason_spilled' => 'កំពប់ / ខូច',
     'reason_extra_guests' => 'ភ្ញៀវបន្ថែម',
