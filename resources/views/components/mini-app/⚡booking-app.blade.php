@@ -1036,7 +1036,7 @@ new class extends Component
         @endif
 
         @if($activeTab === 'history')
-            <div wire:key="tma-tab-history" wire:poll.8s class="cbvh-fade-slide space-y-4">
+            <div wire:key="tma-tab-history" @if($activeOrderCount > 0) wire:poll.8s @endif class="cbvh-fade-slide space-y-4">
                 <h2 class="text-base font-bold text-[#2C211C] dark:text-[#F5EDE7]">{{ __('cbvh.your_drink_orders') }}</h2>
 
                 <div class="space-y-3">
