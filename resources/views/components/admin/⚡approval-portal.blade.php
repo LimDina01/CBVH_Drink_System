@@ -2348,7 +2348,7 @@ new class extends Component
                                             </div>
                                             @if(count($scheduleItems) > 1)
                                                 <button type="button"
-                                                        @click.prevent="askConfirm('{{ __('cbvh.confirm_remove_drink') }}', () => $wire.removeScheduleItemRow({{ $idx }}))"
+                                                        @click.prevent="askConfirm('{{ addslashes(__('cbvh.confirm_remove_drink')) }}', () => $wire.removeScheduleItemRow({{ $idx }}))"
                                                         class="w-7 h-7 shrink-0 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-600 text-xs font-bold transition flex items-center justify-center cursor-pointer"
                                                         title="Remove this drink">
                                                     ✕
@@ -2395,7 +2395,7 @@ new class extends Component
                         <!-- Single Unified Submit Button -->
                         <div class="space-y-2">
                             <button type="button"
-                                    @click.prevent="askConfirm('{{ __('cbvh.confirm_save_schedule') }}', () => $wire.saveRecurringSchedule())"
+                                    @click.prevent="askConfirm('{{ addslashes(__('cbvh.confirm_save_schedule')) }}', () => $wire.saveRecurringSchedule())"
                                     class="w-full py-3 bg-[#9E6B55] hover:bg-[#835440] text-white font-bold text-xs rounded-xl shadow-xs transition cursor-pointer flex items-center justify-center gap-2">
                                 <span wire:loading.remove wire:target="saveRecurringSchedule">💾 {{ __('cbvh.save_schedule') }}</span>
                                 <span wire:loading wire:target="saveRecurringSchedule">⏳ Saving Schedule & Drink Package...</span>
@@ -2441,22 +2441,22 @@ new class extends Component
                         <!-- Quick Actions Bar -->
                         <div class="flex flex-wrap items-center gap-2 pt-1">
                             <button type="button"
-                                    @click.prevent="askConfirm('{{ __('cbvh.confirm_prefill_mon_fri') }}', () => $wire.prefillScheduleWorkingDays(false))"
+                                    @click.prevent="askConfirm('{{ addslashes(__('cbvh.confirm_prefill_mon_fri')) }}', () => $wire.prefillScheduleWorkingDays(false))"
                                     class="px-3 py-1.5 rounded-xl bg-[#FAF6F3] dark:bg-[#1A1412] border border-[#E8DDD6] dark:border-[#3D2F29] text-[#2C211C] dark:text-[#F5EDE7] hover:bg-[#9E6B55] hover:text-white hover:border-[#9E6B55] text-xs font-bold transition cursor-pointer flex items-center gap-1 shadow-2xs">
                                 ⚡ {{ __('cbvh.prefill_mon_fri') }}
                             </button>
                             <button type="button"
-                                    @click.prevent="askConfirm('{{ __('cbvh.confirm_prefill_mon_sat') }}', () => $wire.prefillScheduleWorkingDays(true))"
+                                    @click.prevent="askConfirm('{{ addslashes(__('cbvh.confirm_prefill_mon_sat')) }}', () => $wire.prefillScheduleWorkingDays(true))"
                                     class="px-3 py-1.5 rounded-xl bg-[#FAF6F3] dark:bg-[#1A1412] border border-[#E8DDD6] dark:border-[#3D2F29] text-[#2C211C] dark:text-[#F5EDE7] hover:bg-[#9E6B55] hover:text-white hover:border-[#9E6B55] text-xs font-bold transition cursor-pointer flex items-center gap-1 shadow-2xs">
                                 ⚡ {{ __('cbvh.prefill_mon_sat') }}
                             </button>
                             <button type="button"
-                                    @click.prevent="askConfirm('{{ __('cbvh.confirm_copy_previous_month') }}', () => $wire.copyScheduleFromPreviousMonth())"
+                                    @click.prevent="askConfirm('{{ addslashes(__('cbvh.confirm_copy_previous_month')) }}', () => $wire.copyScheduleFromPreviousMonth())"
                                     class="px-3 py-1.5 rounded-xl bg-[#FAF6F3] dark:bg-[#1A1412] border border-[#E8DDD6] dark:border-[#3D2F29] text-[#2C211C] dark:text-[#F5EDE7] hover:bg-[#9E6B55] hover:text-white hover:border-[#9E6B55] text-xs font-bold transition cursor-pointer flex items-center gap-1 shadow-2xs">
                                 📋 {{ __('cbvh.copy_previous_month') }}
                             </button>
                             <button type="button"
-                                    @click.prevent="askConfirm('{{ __('cbvh.confirm_clear_month') }}', () => $wire.clearScheduleCurrentMonth())"
+                                    @click.prevent="askConfirm('{{ addslashes(__('cbvh.confirm_clear_month')) }}', () => $wire.clearScheduleCurrentMonth())"
                                     class="px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold transition cursor-pointer flex items-center gap-1 shadow-2xs ml-auto">
                                 🗑️ {{ __('cbvh.clear_month') }}
                             </button>
@@ -2485,7 +2485,7 @@ new class extends Component
                                     </button>
                                 @endif
                                 <button type="button"
-                                        @click.prevent="askConfirm('{{ __('cbvh.confirm_save_calendar') }}', () => $wire.saveScheduleCalendarDates())"
+                                        @click.prevent="askConfirm('{{ addslashes(__('cbvh.confirm_save_calendar')) }}', () => $wire.saveScheduleCalendarDates())"
                                         class="px-4 py-1.5 rounded-xl {{ $calendarDirty ? 'bg-[#9E6B55] hover:bg-[#835440] text-white shadow-xs font-black' : 'bg-white dark:bg-[#241C19] text-[#7C6A60] dark:text-[#BBA79D] border border-[#E8DDD6] dark:border-[#3D2F29] font-bold' }} text-xs transition cursor-pointer flex items-center gap-1.5">
                                     <span wire:loading.remove wire:target="saveScheduleCalendarDates">💾 {{ __('cbvh.save_calendar_schedule') }}</span>
                                     <span wire:loading wire:target="saveScheduleCalendarDates">⏳ Saving...</span>
@@ -2602,7 +2602,7 @@ new class extends Component
                         </div>
 
                         <button type="button"
-                                @click.prevent="askConfirm('{{ __('cbvh.confirm_generate_today') }}', () => $wire.dispatchTodayOrderNow())"
+                                @click.prevent="askConfirm('{{ addslashes(__('cbvh.confirm_generate_today')) }}', () => $wire.dispatchTodayOrderNow())"
                                 class="px-4 py-2.5 bg-[#9E6B55] hover:bg-[#835440] text-white font-bold text-xs rounded-xl shadow-xs transition cursor-pointer flex items-center gap-1.5 whitespace-nowrap">
                             ⚡ {{ __('cbvh.generate_today_now') }}
                         </button>

@@ -214,7 +214,7 @@ return [
     'confirm_prefill_mon_sat' => 'Prefill Monday to Saturday working days for this month?',
     'confirm_copy_previous_month' => 'Copy all scheduled dates from the previous month?',
     'confirm_clear_month' => 'Are you sure you want to clear all scheduled days for this month?',
-    'confirm_generate_today' => 'Dispatch today\'s standing order to the Barista now?',
+    'confirm_generate_today' => 'Dispatch standing order for today to the Barista now?',
     'total_orders' => 'Total Orders',
     'total_cups' => 'Total Cups',
     'from_date' => 'From Date',
