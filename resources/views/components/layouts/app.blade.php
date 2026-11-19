@@ -29,8 +29,10 @@
             if (window.Telegram && window.Telegram.WebApp) {
                 const tg = window.Telegram.WebApp;
                 try {
-                    tg.setHeaderColor(isDark ? '#231B18' : '#FFFFFF');
-                    tg.setBackgroundColor(isDark ? '#1A1412' : '#FAF6F3');
+                    if (typeof tg.isVersionAtLeast === 'function' && tg.isVersionAtLeast('6.1')) {
+                        tg.setHeaderColor(isDark ? '#231B18' : '#FFFFFF');
+                        tg.setBackgroundColor(isDark ? '#1A1412' : '#FAF6F3');
+                    }
                 } catch (e) {}
             }
         };
