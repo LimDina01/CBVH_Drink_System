@@ -50,7 +50,7 @@ class RecurringOrderService
                     $locNote = $schedule->location_detail ? "📍 {$schedule->location_detail}" : "";
                     $notes = trim($locNote . ($schedule->notes ? ($locNote ? " — " : "") . $schedule->notes : ""));
                     if (empty($notes)) {
-                        $notes = "🗓️ " . ($schedule->title ?: 'Standing Order');
+                        $notes = "🗓️ " . ($schedule->title ?: 'Schedule Order');
                     }
 
                     $order = DrinkOrder::create([

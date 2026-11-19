@@ -1687,7 +1687,7 @@ class BookingSystemTest extends TestCase
         $component = Livewire::actingAs($admin)
             ->test('admin.approval-portal')
             ->set('activeSection', 'recurring')
-            ->set('scheduleTitle', 'Executive Floor Standing Order')
+            ->set('scheduleTitle', 'Executive Floor Schedule Order')
             ->set('scheduleBranchId', $hq->id)
             ->set('scheduleLocationDetail', '3rd Floor VIP Room')
             ->set('scheduleDeliveryTime', '09:00')
@@ -1695,7 +1695,7 @@ class BookingSystemTest extends TestCase
             ->assertSet('flashType', 'success');
 
         $this->assertDatabaseHas('recurring_schedules', [
-            'title' => 'Executive Floor Standing Order',
+            'title' => 'Executive Floor Schedule Order',
             'location_detail' => '3rd Floor VIP Room',
             'delivery_time' => '09:00',
         ]);
@@ -1793,7 +1793,7 @@ class BookingSystemTest extends TestCase
             ->assertSee('Floor 2 Reception')
             ->assertSee('08:30 AM')
             ->assertSee('10')
-            ->assertSee('Standing Order');
+            ->assertSee('Schedule Order');
 
         // Test Barista workflow: accept -> complete
         $baristaComponent->call('acceptOrder', $order->id);
@@ -1809,7 +1809,7 @@ class BookingSystemTest extends TestCase
         $hq = Branch::where('is_hq', true)->first();
 
         $schedule = \App\Models\RecurringSchedule::firstOrCreate([
-            'title' => 'Daily Standing Order',
+            'title' => 'Daily Schedule Order',
         ], [
             'branch_id' => $hq->id,
             'delivery_time' => '08:30',

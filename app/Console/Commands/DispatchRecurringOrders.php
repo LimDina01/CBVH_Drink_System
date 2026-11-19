@@ -9,7 +9,7 @@ class DispatchRecurringOrders extends Command
 {
     protected $signature = 'recurring:dispatch {--date= : The date to dispatch for (YYYY-MM-DD)}';
 
-    protected $description = 'Dispatch active recurring standing orders into live barista tickets';
+    protected $description = 'Dispatch active recurring schedule orders into live barista tickets';
 
     public function handle(RecurringOrderService $service): int
     {

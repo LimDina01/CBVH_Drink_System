@@ -85,7 +85,7 @@ new class extends Component
 
     // --- Recurring Schedule Management ---
     public ?int $scheduleId = null;
-    public string $scheduleTitle = 'Daily Standing Order';
+    public string $scheduleTitle = 'Daily Schedule Order';
     public ?int $scheduleBranchId = null;
     public ?int $scheduleRoomId = null;
     public string $scheduleLocationDetail = '';
@@ -859,7 +859,7 @@ new class extends Component
         if (!$first) {
             $hqBranch = Branch::where('code', 'HQ')->first() ?? Branch::first();
             $first = RecurringSchedule::create([
-                'title' => 'Daily Standing Order',
+                'title' => 'Daily Schedule Order',
                 'branch_id' => $hqBranch ? $hqBranch->id : 1,
                 'delivery_time' => '08:30',
                 'is_active' => true,
@@ -1094,7 +1094,7 @@ new class extends Component
         if (!$schedule) return;
 
         $schedule->update([
-            'title' => $this->scheduleTitle ?: 'Daily Standing Order',
+            'title' => $this->scheduleTitle ?: 'Daily Schedule Order',
             'branch_id' => $this->scheduleBranchId,
             'room_id' => $this->scheduleRoomId,
             'location_detail' => $this->scheduleLocationDetail,
@@ -2312,7 +2312,7 @@ new class extends Component
                                     <label class="block text-[11px] font-bold text-[#7C6A60] dark:text-[#BBA79D] mb-1">
                                         {{ __('cbvh.notes') }}
                                     </label>
-                                    <input type="text" wire:model="scheduleNotes" placeholder="Special standing instructions for barista..."
+                                    <input type="text" wire:model="scheduleNotes" placeholder="Special schedule instructions for barista..."
                                            class="w-full text-xs p-2.5 rounded-xl border border-[#E8DDD6] dark:border-[#3D2F29] bg-[#FAF6F3] dark:bg-[#1A1412] text-[#2C211C] dark:text-[#F5EDE7]" />
                                 </div>
                             </div>
