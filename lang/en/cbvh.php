@@ -112,7 +112,7 @@ return [
     'status_completed' => 'Received',
     'status_auto_completed' => 'Auto-Done',
     'status_rejected' => 'Cancelled',
-    'in_delivery_notice' => 'Drinks are on the way! Confirm receipt below (auto-completes after 10 mins).',
+    'in_delivery_notice' => 'Drinks are on the way! Confirm receipt below (auto-completes after :minutes mins).',
     'btn_received_done' => 'Received / Done',
     'btn_order_more_spilled' => 'Order More / Spilled',
     'btn_extend_completed' => 'Spilled or Extra Guests? Order More',

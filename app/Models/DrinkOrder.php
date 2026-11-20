@@ -129,10 +129,26 @@ class DrinkOrder extends Model
                     'barista_rejection_reason' => 'Auto-expired: unfulfilled on order day',
                 ]);
 
-            $expired = static::with('user')
+            $expired = static::with(['user', 'branch'])
                 ->where('status', 'in_delivery')
                 ->whereNotNull('in_delivery_at')
-                ->where('in_delivery_at', '<=', now()->subMinutes(10))
+                ->where(function ($q) {
+                    $q->where(function ($sub) {
+                        // HQ orders: auto-complete after 10 minutes
+                        $sub->whereHas('branch', fn($b) => $b->where('is_hq', true))
+                            ->where('in_delivery_at', '<=', now()->subMinutes(10));
+                    })
+                    ->orWhere(function ($sub) {
+                        // Branch cross-city orders: auto-complete after 30 minutes
+                        $sub->whereHas('branch', fn($b) => $b->where('is_hq', false))
+                            ->where('in_delivery_at', '<=', now()->subMinutes(30));
+                    })
+                    ->orWhere(function ($sub) {
+                        // Fallback if branch unassigned: 10 minutes
+                        $sub->whereDoesntHave('branch')
+                            ->where('in_delivery_at', '<=', now()->subMinutes(10));
+                    });
+                })
                 ->get();
 
             if ($expired->isEmpty()) {
@@ -150,9 +166,11 @@ class DrinkOrder extends Model
 
                 if ($telegram && $order->user && $order->user->telegram_chat_id) {
                     try {
+                        $isBranch = $order->branch && !$order->branch->is_hq;
+                        $mins = $isBranch ? 30 : 10;
                         $telegram->sendMessage(
                             $order->user->telegram_chat_id,
-                            "✅ <b>Order #{$order->id} Auto-Completed:</b> Marked as delivered after 10 minutes. Need extra drinks or replacement? Open <b>My Orders</b> and tap <b>Order More / Spilled</b>."
+                            "✅ <b>Order #{$order->id} Auto-Completed:</b> Marked as delivered after {$mins} minutes. Need extra drinks or replacement? Open <b>My Orders</b> and tap <b>Order More / Spilled</b>."
                         );
                     } catch (\Throwable $e) {
                         // Never block polling if Telegram fails

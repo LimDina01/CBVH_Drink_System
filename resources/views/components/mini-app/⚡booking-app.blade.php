@@ -1046,9 +1046,12 @@ new class extends Component
                             </div>
 
                             @if($order->status === 'in_delivery')
+                                @php
+                                    $autoMins = ($order->branch && !$order->branch->is_hq) ? 30 : 10;
+                                @endphp
                                 <div class="pt-2 border-t border-[#FAF6F3] dark:border-[#3D2F29] space-y-2">
                                     <div class="text-[11px] text-blue-700 dark:text-blue-300 font-medium">
-                                        🚚 {{ __('cbvh.in_delivery_notice') }}
+                                        🚚 {{ __('cbvh.in_delivery_notice', ['minutes' => $autoMins]) }}
                                     </div>
                                     <div class="grid grid-cols-2 gap-2">
                                         <button wire:click="confirmReceived({{ $order->id }})"

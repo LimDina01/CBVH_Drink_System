@@ -421,7 +421,7 @@ class TelegramService
     public function notifyUserOrderInDelivery($order): void
     {
         try {
-            $order->loadMissing(['user', 'room']);
+            $order->loadMissing(['user', 'room', 'branch']);
             if (!$order->user || !$order->user->telegram_chat_id) {
                 return;
             }
@@ -432,10 +432,12 @@ class TelegramService
             }
 
             $roomName = $order->room?->name ?? ($order->location_detail ?: 'CBVH Office');
+            $isBranch = $order->branch && !$order->branch->is_hq;
+            $minsText = $isBranch ? '30 minutes' : '10 minutes';
 
             $text = "🚚 <b>Drink Order #{$order->id} is OUT FOR DELIVERY!</b>\n\n"
                   . "📍 <b>Destination:</b> {$roomName}\n"
-                  . "⏱️ Drinks will auto-complete in 10 minutes upon arrival.\n\n"
+                  . "⏱️ Drinks will auto-complete in {$minsText} upon arrival.\n\n"
                   . "Tap below to view live order status or confirm receipt:";
 
             $keyboard = [

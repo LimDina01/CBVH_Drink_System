@@ -339,6 +339,32 @@ class BookingSystemTest extends TestCase
             'id' => $recentOrder->id,
             'status' => 'in_delivery',
         ]);
+
+        // Branch orders require 30 minutes to auto-complete (15m is still in delivery)
+        $branch = Branch::where('is_hq', false)->first();
+        $branchRoom = Room::where('branch_id', $branch->id)->first();
+        $branchOrder15 = DrinkOrder::create([
+            'user_id' => $employee->id,
+            'branch_id' => $branch->id,
+            'room_id' => $branchRoom->id,
+            'order_type' => 'meeting',
+            'status' => 'in_delivery',
+            'in_delivery_at' => now()->subMinutes(15),
+        ]);
+        $this->assertSame(0, DrinkOrder::autoCompleteExpiredDeliveries());
+        $this->assertEquals('in_delivery', $branchOrder15->fresh()->status);
+
+        // Branch order at 31 minutes should auto-complete
+        $branchOrder31 = DrinkOrder::create([
+            'user_id' => $employee->id,
+            'branch_id' => $branch->id,
+            'room_id' => $branchRoom->id,
+            'order_type' => 'meeting',
+            'status' => 'in_delivery',
+            'in_delivery_at' => now()->subMinutes(31),
+        ]);
+        $this->assertSame(1, DrinkOrder::autoCompleteExpiredDeliveries());
+        $this->assertEquals('completed', $branchOrder31->fresh()->status);
     }
 
     public function test_extend_order_for_spilled_drink_bypasses_advance_and_hours_rules(): void
