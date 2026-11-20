@@ -120,13 +120,27 @@ class DrinkOrder extends Model
     public static function autoCompleteExpiredDeliveries(bool $notifyTelegram = true): int
     {
         return Cache::lock('drink_auto_complete_lock', 10)->get(function () use ($notifyTelegram) {
-            // Auto-cancel stale quick orders from yesterday or earlier that were left unfulfilled
-            static::whereIn('order_type', ['instant', 'extend'])
-                ->whereIn('status', ['approved', 'preparing'])
-                ->whereDate('created_at', '<', today())
+            // Auto-cancel stale orders from yesterday or earlier that were left unfulfilled
+            static::whereIn('status', ['approved', 'preparing'])
+                ->where(function ($q) {
+                    $q->where(function ($sub) {
+                        $sub->whereIn('order_type', ['instant', 'extend'])
+                            ->whereDate('created_at', '<', today());
+                    })
+                    ->orWhere(function ($sub) {
+                        $sub->whereIn('order_type', ['meeting', 'recurring'])
+                            ->where(function ($dateQ) {
+                                $dateQ->whereDate('delivery_time', '<', today())
+                                    ->orWhere(function ($fallbackQ) {
+                                        $fallbackQ->whereNull('delivery_time')
+                                            ->whereDate('created_at', '<', today());
+                                    });
+                            });
+                    });
+                })
                 ->update([
                     'status' => 'rejected_by_barista',
-                    'barista_rejection_reason' => 'Auto-expired: unfulfilled on order day',
+                    'barista_rejection_reason' => 'Auto-expired: unfulfilled on scheduled day',
                 ]);
 
             $expired = static::with(['user', 'branch'])

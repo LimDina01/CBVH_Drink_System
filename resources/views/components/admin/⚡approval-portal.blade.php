@@ -1124,7 +1124,7 @@ new class extends Component
         $schedule->items()->delete();
         foreach ($this->scheduleItems as $it) {
             $drinkId = $it['drink_item_id'] ?? null;
-            $qty = (int) ($it['quantity'] ?? 0);
+            $qty = min(500, max(1, (int) ($it['quantity'] ?? 0)));
             if ($drinkId && $qty > 0) {
                 RecurringScheduleItem::create([
                     'recurring_schedule_id' => $schedule->id,

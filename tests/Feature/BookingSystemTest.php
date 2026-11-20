@@ -516,13 +516,25 @@ class BookingSystemTest extends TestCase
         ]);
         $yesterdayOrder->forceFill(['created_at' => now()->subDay()])->save();
 
+        // A meeting order left over from yesterday
+        $yesterdayMeeting = DrinkOrder::create([
+            'user_id' => $employee->id,
+            'branch_id' => $hq->id,
+            'room_id' => $room->id,
+            'order_type' => 'meeting',
+            'delivery_time' => now()->subDay()->setTime(14, 0),
+            'status' => 'approved',
+            'approved_at' => now()->subDays(2),
+        ]);
+
         // Kitchen display sees the overdue badge
         Livewire::actingAs($barista)
             ->test('barista.kitchen-display')
             ->assertSee(__('cbvh.banner_overdue'));
 
-        // Yesterday's stale order is auto-expired
+        // Yesterday's stale orders are auto-expired
         $this->assertEquals('rejected_by_barista', $yesterdayOrder->fresh()->status);
+        $this->assertEquals('rejected_by_barista', $yesterdayMeeting->fresh()->status);
     }
 
     public function test_admin_can_create_staff_account_and_export_csv(): void

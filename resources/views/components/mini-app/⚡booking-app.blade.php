@@ -234,7 +234,7 @@ new class extends Component
         $drink = DrinkItem::find($this->selectedDrinkId);
         if (!$drink || !$drink->is_available) return;
 
-        $qty = max(1, (int) $this->drinkQuantity);
+        $qty = min(99, max(1, (int) $this->drinkQuantity));
         $trayCups = (int) collect($this->drinkCart)->sum('quantity');
 
         if ($this->extendingOrderId) {
