@@ -198,7 +198,8 @@ new class extends Component
 
     public function openResetPasswordModal(int $userId): void
     {
-        $user = User::findOrFail($userId);
+        $user = User::find($userId);
+        if (!$user) return;
         $this->resettingUserId = $user->id;
         $this->resettingUserName = $user->name;
         $this->resettingUserEmployeeId = $user->employee_id ?: 'No ID';
@@ -222,7 +223,13 @@ new class extends Component
             return;
         }
 
-        $user = User::findOrFail($this->resettingUserId);
+        $user = User::find($this->resettingUserId);
+        if (!$user) {
+            $this->showResetPasswordModal = false;
+            $this->resettingUserId = null;
+            return;
+        }
+
         $user->update([
             'password' => Hash::make($this->newStaffResetPassword),
         ]);
@@ -235,7 +242,8 @@ new class extends Component
 
     public function openEditStaffModal(int $userId): void
     {
-        $user = User::findOrFail($userId);
+        $user = User::find($userId);
+        if (!$user) return;
         $this->editingStaffId = $user->id;
         $this->editingStaffName = $user->name;
         $this->editingStaffEmployeeId = $user->employee_id ?? '';
@@ -260,7 +268,13 @@ new class extends Component
         ]);
 
         $cleanEmpId = strtoupper(trim($this->editingStaffEmployeeId));
-        $user = User::findOrFail($this->editingStaffId);
+        $user = User::find($this->editingStaffId);
+        if (!$user) {
+            $this->showEditStaffModal = false;
+            $this->editingStaffId = null;
+            return;
+        }
+
         $user->update([
             'name' => trim($this->editingStaffName),
             'employee_id' => $cleanEmpId,
@@ -415,7 +429,8 @@ new class extends Component
 
     public function openEditDrinkModal(int $drinkId): void
     {
-        $drink = DrinkItem::findOrFail($drinkId);
+        $drink = DrinkItem::find($drinkId);
+        if (!$drink) return;
         $this->editingDrinkId = $drink->id;
         $this->drinkNameEn = $drink->name;
         $this->drinkNameKm = $drink->name_km ?? '';
@@ -544,7 +559,8 @@ new class extends Component
 
     public function toggleDrinkAvailability(int $drinkId): void
     {
-        $drink = DrinkItem::findOrFail($drinkId);
+        $drink = DrinkItem::find($drinkId);
+        if (!$drink) return;
         $drink->update(['is_available' => !$drink->is_available]);
         $statusText = $drink->is_available ? __('cbvh.in_stock') : __('cbvh.out_of_stock');
         $this->flashMessage = "{$drink->name}: {$statusText}";
@@ -553,7 +569,8 @@ new class extends Component
 
     public function deleteDrink(int $drinkId): void
     {
-        $drink = DrinkItem::findOrFail($drinkId);
+        $drink = DrinkItem::find($drinkId);
+        if (!$drink) return;
         $name = $drink->name;
         $drink->delete();
         $this->flashMessage = __('cbvh.drink_deleted_success') . " ({$name})";

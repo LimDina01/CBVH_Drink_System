@@ -300,44 +300,54 @@ class TelegramService
      */
     public function notifyApproverForDrinkOrder($order): void
     {
-        $approvers = $order->branch->users()
-            ->whereIn('role', ['hod', 'admin'])
-            ->whereNotNull('telegram_chat_id')
-            ->get();
+        try {
+            $order->loadMissing(['user', 'room', 'branch', 'items.drinkItem']);
 
-        if ($approvers->isEmpty()) {
-            $approvers = User::where('role', 'admin')
+            $approvers = $order->branch?->users()
+                ?->whereIn('role', ['hod', 'admin'])
                 ->whereNotNull('telegram_chat_id')
-                ->get();
-        }
+                ->get() ?? collect();
 
-        if ($approvers->isEmpty()) {
-            return;
-        }
+            if ($approvers->isEmpty()) {
+                $approvers = User::where('role', 'admin')
+                    ->whereNotNull('telegram_chat_id')
+                    ->get();
+            }
 
-        $text = "☕ <b>New Drink Request #{$order->id}</b>\n\n"
-              . "<b>Requester:</b> {$order->user->name}\n"
-              . "<b>Room:</b> {$order->room->name}\n"
-              . "<b>Items:</b>\n";
+            if ($approvers->isEmpty()) {
+                return;
+            }
 
-        foreach ($order->items as $item) {
-            $options = $this->formatDrinkOptions($item->selected_options);
-            $text .= "• {$item->quantity}x {$item->drinkItem->name}{$options}\n";
-        }
+            $requesterName = $order->user?->name ?? 'Staff';
+            $roomName = $order->room?->name ?? ($order->location_detail ?: 'Main Area');
 
-        if ($order->notes) {
-            $text .= "\n<b>Notes:</b> {$order->notes}\n";
-        }
+            $text = "☕ <b>New Drink Request #{$order->id}</b>\n\n"
+                  . "<b>Requester:</b> {$requesterName}\n"
+                  . "<b>Room:</b> {$roomName}\n"
+                  . "<b>Items:</b>\n";
 
-        $keyboard = [
-            [
-                ['text' => '✅ Approve', 'callback_data' => "drink_approve_{$order->id}"],
-                ['text' => '❌ Reject', 'callback_data' => "drink_reject_{$order->id}"],
-            ]
-        ];
+            foreach ($order->items as $item) {
+                $drinkName = $item->drinkItem?->name ?? 'Drink';
+                $options = $this->formatDrinkOptions($item->selected_options);
+                $text .= "• {$item->quantity}x {$drinkName}{$options}\n";
+            }
 
-        foreach ($approvers as $approver) {
-            $this->sendMessage($approver->telegram_chat_id, $text, $keyboard);
+            if ($order->notes) {
+                $text .= "\n<b>Notes:</b> {$order->notes}\n";
+            }
+
+            $keyboard = [
+                [
+                    ['text' => '✅ Approve', 'callback_data' => "drink_approve_{$order->id}"],
+                    ['text' => '❌ Reject', 'callback_data' => "drink_reject_{$order->id}"],
+                ]
+            ];
+
+            foreach ($approvers as $approver) {
+                $this->sendMessage($approver->telegram_chat_id, $text, $keyboard);
+            }
+        } catch (\Throwable $e) {
+            Log::error("Failed to notify approvers for order #{$order->id}: " . $e->getMessage());
         }
     }
 
@@ -346,54 +356,62 @@ class TelegramService
      */
     public function notifyBaristaForDrinkOrder($order): void
     {
-        $order->loadMissing(['user', 'room', 'branch', 'items.drinkItem']);
+        try {
+            $order->loadMissing(['user', 'room', 'branch', 'items.drinkItem']);
 
-        // Centralized kitchen: notify all linked baristas (HQ prepares both HQ and Branch orders)
-        $baristas = User::where('role', 'barista')
-            ->whereNotNull('telegram_chat_id')
-            ->get();
+            // Centralized kitchen: notify all linked baristas (HQ prepares both HQ and Branch orders)
+            $baristas = User::where('role', 'barista')
+                ->whereNotNull('telegram_chat_id')
+                ->get();
 
-        if ($baristas->isEmpty()) {
-            return;
-        }
+            if ($baristas->isEmpty()) {
+                return;
+            }
 
-        $typeBadge = match ($order->order_type) {
-            'instant' => '⚡ QUICK DRINK',
-            'extend' => "🔄 EXTEND / MORE (Ref #{$order->parent_order_id})",
-            'recurring' => '🗓️ STANDING RECURRING ORDER',
-            default => '📅 MEETING DRINK',
-        };
+            $typeBadge = match ($order->order_type) {
+                'instant' => '⚡ QUICK DRINK',
+                'extend' => "🔄 EXTEND / MORE (Ref #{$order->parent_order_id})",
+                'recurring' => '🗓️ SCHEDULE ORDER',
+                default => '📅 MEETING DRINK',
+            };
 
-        $when = $order->delivery_time ? $order->delivery_time->format('d/M/Y, h:i A') : 'ASAP';
-        $location = $order->room ? $order->room->name : 'Main Area';
-        $text = "🔔 <b>{$typeBadge} — Order #{$order->id}</b>\n\n"
-              . "<b>Branch:</b> {$order->branch->name}\n"
-              . "<b>Location:</b> {$location}\n"
-              . "<b>Requester:</b> {$order->user->name}\n"
-              . "<b>Target Time:</b> {$when}\n";
+            $when = $order->delivery_time ? $order->delivery_time->format('d/M/Y, h:i A') : 'ASAP';
+            $branchName = $order->branch?->name ?? 'HQ';
+            $location = $order->room?->name ?? ($order->location_detail ?: 'Main Area');
+            $requesterName = $order->user?->name ?? 'Staff';
 
-        if ($order->extend_reason) {
-            $text .= "<b>Reason:</b> " . ucfirst(str_replace('_', ' ', $order->extend_reason)) . "\n";
-        }
+            $text = "🔔 <b>{$typeBadge} — Order #{$order->id}</b>\n\n"
+                  . "<b>Branch:</b> {$branchName}\n"
+                  . "<b>Location:</b> {$location}\n"
+                  . "<b>Requester:</b> {$requesterName}\n"
+                  . "<b>Target Time:</b> {$when}\n";
 
-        $text .= "\n<b>Items:</b>\n";
-        foreach ($order->items as $item) {
-            $opts = $this->formatDrinkOptions($item->selected_options);
-            $text .= "• {$item->quantity}x <b>{$item->drinkItem->name}</b>{$opts}\n";
-        }
+            if ($order->extend_reason) {
+                $text .= "<b>Reason:</b> " . ucfirst(str_replace('_', ' ', $order->extend_reason)) . "\n";
+            }
 
-        if ($order->notes) {
-            $text .= "\n<b>Notes:</b> {$order->notes}\n";
-        }
+            $text .= "\n<b>Items:</b>\n";
+            foreach ($order->items as $item) {
+                $opts = $this->formatDrinkOptions($item->selected_options);
+                $drinkName = $item->drinkItem?->name ?? 'Drink';
+                $text .= "• {$item->quantity}x <b>{$drinkName}</b>{$opts}\n";
+            }
 
-        $keyboard = [
-            [
-                ['text' => '👍 Start Making (Package)', 'callback_data' => "barista_accept_{$order->id}"],
-            ]
-        ];
+            if ($order->notes) {
+                $text .= "\n<b>Notes:</b> {$order->notes}\n";
+            }
 
-        foreach ($baristas as $barista) {
-            $this->sendMessage($barista->telegram_chat_id, $text, $keyboard);
+            $keyboard = [
+                [
+                    ['text' => '👍 Start Making (Package)', 'callback_data' => "barista_accept_{$order->id}"],
+                ]
+            ];
+
+            foreach ($baristas as $barista) {
+                $this->sendMessage($barista->telegram_chat_id, $text, $keyboard);
+            }
+        } catch (\Throwable $e) {
+            Log::error("Failed to notify barista for order #{$order->id}: " . $e->getMessage());
         }
     }
 
@@ -402,28 +420,34 @@ class TelegramService
      */
     public function notifyUserOrderInDelivery($order): void
     {
-        $order->loadMissing(['user', 'room']);
-        if (!$order->user || !$order->user->telegram_chat_id) {
-            return;
+        try {
+            $order->loadMissing(['user', 'room']);
+            if (!$order->user || !$order->user->telegram_chat_id) {
+                return;
+            }
+
+            $appUrl = config('app.url');
+            if (empty($appUrl) || str_starts_with($appUrl, 'http://localhost')) {
+                $appUrl = 'https://orderdrink.cbvh66.com:3000';
+            }
+
+            $roomName = $order->room?->name ?? ($order->location_detail ?: 'CBVH Office');
+
+            $text = "🚚 <b>Drink Order #{$order->id} is OUT FOR DELIVERY!</b>\n\n"
+                  . "📍 <b>Destination:</b> {$roomName}\n"
+                  . "⏱️ Drinks will auto-complete in 10 minutes upon arrival.\n\n"
+                  . "Tap below to view live order status or confirm receipt:";
+
+            $keyboard = [
+                [
+                    ['text' => '📱 Open Mini App • បើកកម្មវិធី', 'web_app' => ['url' => $appUrl]],
+                ]
+            ];
+
+            $this->sendMessage($order->user->telegram_chat_id, $text, $keyboard);
+        } catch (\Throwable $e) {
+            Log::error("Failed to notify user for order in delivery #{$order->id}: " . $e->getMessage());
         }
-
-        $appUrl = config('app.url');
-        if (empty($appUrl) || str_starts_with($appUrl, 'http://localhost')) {
-            $appUrl = 'https://orderdrink.cbvh66.com:3000';
-        }
-
-        $text = "🚚 <b>Drink Order #{$order->id} is OUT FOR DELIVERY!</b>\n\n"
-              . "📍 <b>Destination:</b> {$order->room->name}\n"
-              . "⏱️ Drinks will auto-complete in 10 minutes upon arrival.\n\n"
-              . "Tap below to view live order status or confirm receipt:";
-
-        $keyboard = [
-            [
-                ['text' => '📱 Open Mini App • បើកកម្មវិធី', 'web_app' => ['url' => $appUrl]],
-            ]
-        ];
-
-        $this->sendMessage($order->user->telegram_chat_id, $text, $keyboard);
     }
 }
 

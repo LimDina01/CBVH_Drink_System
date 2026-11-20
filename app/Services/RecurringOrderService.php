@@ -43,9 +43,17 @@ class RecurringOrderService
                     $deliveryTime = Carbon::parse($dateStr . ' ' . ($schedule->delivery_time ?: '08:30'));
                     $totalCups = (int) $schedule->items->sum('quantity');
 
-                    // Fallback room if room_id is empty
+                    // Fallback room if room_id is empty: ensure it belongs to this branch
                     $roomId = $schedule->room_id
-                        ?: (Room::where('branch_id', $schedule->branch_id)->value('id') ?? Room::value('id'));
+                        ?: Room::where('branch_id', $schedule->branch_id)->value('id');
+
+                    if (!$roomId) {
+                        $defaultRoom = Room::firstOrCreate(
+                            ['branch_id' => $schedule->branch_id, 'name' => 'Main Office Area'],
+                            ['floor' => 'Ground Floor', 'capacity' => 20, 'is_active' => true]
+                        );
+                        $roomId = $defaultRoom->id;
+                    }
 
                     $locNote = $schedule->location_detail ? "📍 {$schedule->location_detail}" : "";
                     $notes = trim($locNote . ($schedule->notes ? ($locNote ? " — " : "") . $schedule->notes : ""));

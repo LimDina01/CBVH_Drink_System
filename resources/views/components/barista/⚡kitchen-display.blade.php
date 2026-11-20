@@ -32,10 +32,14 @@ new class extends Component
             ]);
 
             if ($order->user && $order->user->telegram_chat_id) {
-                app(TelegramService::class)->sendMessage(
-                    $order->user->telegram_chat_id,
-                    "☕ <b>Order #{$orderId} Accepted!</b> Barista is preparing your full drink package now."
-                );
+                try {
+                    app(TelegramService::class)->sendMessage(
+                        $order->user->telegram_chat_id,
+                        "☕ <b>Order #{$orderId} Accepted!</b> Barista is preparing your full drink package now."
+                    );
+                } catch (\Throwable $e) {
+                    \Illuminate\Support\Facades\Log::warning("Telegram accept notification failed: " . $e->getMessage());
+                }
             }
 
             $this->flashMessage = "#{$orderId} — " . __('cbvh.status_preparing');
