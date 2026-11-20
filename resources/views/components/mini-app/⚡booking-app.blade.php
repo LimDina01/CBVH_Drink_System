@@ -317,7 +317,9 @@ new class extends Component
         $this->extendingOrderId = $parent->id;
         $this->parentMaxCups = max(1, max((int) $parent->total_cups, (int) $parent->people_count));
         $this->selectedBranchId = $parent->branch_id;
-        $this->selectedRoomId = $parent->room_id;
+        $room = Room::where('id', $parent->room_id)->where('is_active', true)->first()
+            ?? Room::where('branch_id', $parent->branch_id)->where('is_active', true)->first();
+        $this->selectedRoomId = $room ? $room->id : $parent->room_id;
         $this->extendReason = 'spilled';
         $this->peopleCount = 1;
         $this->drinkCart = [];
