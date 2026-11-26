@@ -290,8 +290,8 @@ new class extends Component
     <!-- Preloaded Sound Elements (Chime + Official Voice merged) -->
     <audio id="barista-sound-quick" preload="auto" src="{{ asset('sounds/voice-quick.wav') }}"></audio>
     <audio id="barista-sound-meeting" preload="auto" src="{{ asset('sounds/voice-meeting.wav') }}"></audio>
-    <audio id="barista-sound-cancelled-quick" preload="auto" src="{{ asset('sounds/voice-cancelled-quick.wav') }}"></audio>
-    <audio id="barista-sound-cancelled-meeting" preload="auto" src="{{ asset('sounds/voice-cancelled-meeting.wav') }}"></audio>
+    <audio id="barista-sound-cancelled-quick" preload="auto" src="{{ asset('sounds/voice-cancelled-quick.mp3') }}"></audio>
+    <audio id="barista-sound-cancelled-meeting" preload="auto" src="{{ asset('sounds/voice-cancelled-meeting.mp3') }}"></audio>
 
     <!-- Header -->
     <header class="bg-white dark:bg-[#241C19] border-b-2 border-[#E8DDD6] dark:border-[#3D2F29] px-5 py-3.5 flex flex-wrap items-center justify-between gap-3 sticky top-0 z-10 shadow-xs">
