@@ -6,11 +6,18 @@ use App\Models\Branch;
 use App\Models\DrinkItem;
 use App\Models\DrinkOrder;
 use App\Models\DrinkOrderItem;
+use App\Models\RecurringSchedule;
+use App\Models\RecurringScheduleDate;
+use App\Models\RecurringScheduleItem;
 use App\Models\Room;
 use App\Models\User;
+use App\Services\RecurringOrderService;
+use App\Services\TelegramService;
+use App\Support\CbvhLocale;
 use Carbon\Carbon;
 use Database\Seeders\DatabaseSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Http;
@@ -443,7 +450,7 @@ class BookingSystemTest extends TestCase
             'status' => 'in_delivery',
             'in_delivery_at' => now(),
         ]);
-        \App\Models\DrinkOrderItem::create([
+        DrinkOrderItem::create([
             'drink_order_id' => $parent->id,
             'drink_item_id' => $drink->id,
             'quantity' => 1,
@@ -635,10 +642,10 @@ class BookingSystemTest extends TestCase
             'selected_options' => ['sugar' => '0%'],
         ]);
 
-        $this->assertSame('Latte', \App\Support\CbvhLocale::toBaseDrinkName('Hot Latte'));
-        $this->assertSame('Latte', \App\Support\CbvhLocale::toBaseDrinkName('Iced Latte'));
-        $this->assertSame('Green Tea', \App\Support\CbvhLocale::toBaseDrinkName('Iced Green Tea Latte'));
-        $this->assertSame('Americano', \App\Support\CbvhLocale::toBaseDrinkName('Iced Americano'));
+        $this->assertSame('Latte', CbvhLocale::toBaseDrinkName('Hot Latte'));
+        $this->assertSame('Latte', CbvhLocale::toBaseDrinkName('Iced Latte'));
+        $this->assertSame('Green Tea', CbvhLocale::toBaseDrinkName('Iced Green Tea Latte'));
+        $this->assertSame('Americano', CbvhLocale::toBaseDrinkName('Iced Americano'));
 
         Livewire::actingAs($admin)
             ->test('admin.approval-portal')
@@ -655,9 +662,9 @@ class BookingSystemTest extends TestCase
             ->assertSet('filterPeriod', 'this_month')
             ->assertSet('dateFrom', now()->startOfMonth()->toDateString())
             ->set('filterUserId', $admin->id)
-            ->assertSeeText('#' . $order->id)
+            ->assertSeeText('#'.$order->id)
             ->set('searchQuery', 'NonExistentXYZ999')
-            ->assertDontSeeText('#' . $order->id)
+            ->assertDontSeeText('#'.$order->id)
             ->set('searchQuery', '')
             ->set('perPage', 30)
             ->assertSet('perPage', 30);
@@ -672,7 +679,7 @@ class BookingSystemTest extends TestCase
                 'chat' => ['id' => 999999],
                 'from' => ['id' => 999999, 'first_name' => 'Stranger'],
                 'text' => '/start',
-            ]
+            ],
         ]);
         $response->assertStatus(200)->assertJson(['ok' => true]);
 
@@ -1204,7 +1211,7 @@ class BookingSystemTest extends TestCase
         ]);
 
         // Security notification was dispatched to genuine user's Telegram chat ID
-        Http::assertSent(function (\Illuminate\Http\Client\Request $request) {
+        Http::assertSent(function (Request $request) {
             return str_contains($request->url(), '/sendMessage')
                 && (string) $request['chat_id'] === '111111'
                 && str_contains($request['text'], 'CBVH Security Alert')
@@ -1312,8 +1319,8 @@ class BookingSystemTest extends TestCase
 
         $this->assertSame('in_delivery', $order->fresh()->status);
 
-        Http::assertSent(function (\Illuminate\Http\Client\Request $request) use ($order) {
-            if (!str_contains($request->url(), '/sendMessage')) {
+        Http::assertSent(function (Request $request) use ($order) {
+            if (! str_contains($request->url(), '/sendMessage')) {
                 return false;
             }
             if ((string) $request['chat_id'] !== '12345678') {
@@ -1321,9 +1328,10 @@ class BookingSystemTest extends TestCase
             }
             $replyMarkup = json_decode($request['reply_markup'] ?? '{}', true);
             $button = $replyMarkup['inline_keyboard'][0][0] ?? [];
+
             return str_contains($request['text'], "Order #{$order->id} is OUT FOR DELIVERY")
                 && str_contains($button['text'], 'Open Mini App')
-                && !empty($button['web_app']['url']);
+                && ! empty($button['web_app']['url']);
         });
     }
 
@@ -1738,7 +1746,7 @@ class BookingSystemTest extends TestCase
             'delivery_time' => '09:00',
         ]);
 
-        $schedule = \App\Models\RecurringSchedule::first();
+        $schedule = RecurringSchedule::first();
 
         // Test prefilling working days
         $component->call('prefillScheduleWorkingDays', false); // Mon-Fri
@@ -1753,7 +1761,7 @@ class BookingSystemTest extends TestCase
                 'quantity' => 10,
                 'sugar_level' => 'Less Sugar',
                 'ice_level' => 'Normal Ice',
-            ]
+            ],
         ])->call('saveRecurringSchedule');
 
         $this->assertDatabaseHas('recurring_schedule_items', [
@@ -1764,7 +1772,7 @@ class BookingSystemTest extends TestCase
         ]);
 
         // Verify re-mounting component retains the saved drink package
-        $newComponent = \Livewire\Livewire::actingAs($admin)->test('admin.⚡approval-portal');
+        $newComponent = Livewire::actingAs($admin)->test('admin.⚡approval-portal');
         $items = $newComponent->get('scheduleItems');
         $this->assertCount(1, $items);
         $this->assertEquals($drink->id, $items[0]['drink_item_id']);
@@ -1778,7 +1786,7 @@ class BookingSystemTest extends TestCase
         $hq = Branch::where('is_hq', true)->first();
         $drink = DrinkItem::where('branch_id', $hq->id)->first();
 
-        $schedule = \App\Models\RecurringSchedule::create([
+        $schedule = RecurringSchedule::create([
             'title' => 'Daily HQ Morning Coffee',
             'branch_id' => $hq->id,
             'location_detail' => 'Floor 2 Reception',
@@ -1787,7 +1795,7 @@ class BookingSystemTest extends TestCase
             'created_by' => $admin->id,
         ]);
 
-        \App\Models\RecurringScheduleItem::create([
+        RecurringScheduleItem::create([
             'recurring_schedule_id' => $schedule->id,
             'drink_item_id' => $drink->id,
             'quantity' => 10,
@@ -1796,14 +1804,14 @@ class BookingSystemTest extends TestCase
         ]);
 
         // Schedule for today
-        \App\Models\RecurringScheduleDate::create([
+        RecurringScheduleDate::create([
             'recurring_schedule_id' => $schedule->id,
             'delivery_date' => today()->toDateString(),
             'status' => 'scheduled',
         ]);
 
         // Dispatch
-        $service = app(\App\Services\RecurringOrderService::class);
+        $service = app(RecurringOrderService::class);
         $orders = $service->dispatchDueOrders(today());
 
         $this->assertCount(1, $orders);
@@ -1823,7 +1831,7 @@ class BookingSystemTest extends TestCase
         // Idempotency: Running dispatch again should NOT create another order for today
         $repeatOrders = $service->dispatchDueOrders(today());
         $this->assertCount(0, $repeatOrders);
-        $this->assertEquals(1, \App\Models\DrinkOrder::where('order_type', 'recurring')->count());
+        $this->assertEquals(1, DrinkOrder::where('order_type', 'recurring')->count());
 
         // Barista Kitchen Display sees the order under instant/quick service orders
         $baristaComponent = Livewire::actingAs($barista)
@@ -1846,7 +1854,7 @@ class BookingSystemTest extends TestCase
         $admin = User::factory()->create(['role' => 'admin']);
         $hq = Branch::where('is_hq', true)->first();
 
-        $schedule = \App\Models\RecurringSchedule::firstOrCreate([
+        $schedule = RecurringSchedule::firstOrCreate([
             'title' => 'Daily Schedule Order',
         ], [
             'branch_id' => $hq->id,
@@ -1887,5 +1895,101 @@ class BookingSystemTest extends TestCase
             'delivery_date' => $testDate,
             'status' => 'scheduled',
         ]);
+    }
+
+    public function test_telegram_username_collision_cannot_hijack_bound_account(): void
+    {
+        $employee = User::where('email', 'employee@company.com')->first();
+        $employee->update([
+            'telegram_chat_id' => '11111111',
+            'telegram_username' => 'shared_handle',
+        ]);
+
+        // Attacker shares the same @username but has a different chat ID
+        $resolved = app(TelegramService::class)->findLinkedTelegramUser('99999999', 'shared_handle');
+
+        $this->assertNull($resolved);
+        $this->assertEquals('11111111', $employee->fresh()->telegram_chat_id);
+    }
+
+    public function test_telegram_webhook_enforces_role_status_guards_and_optional_secret(): void
+    {
+        $hq = Branch::where('is_hq', true)->first();
+        $room = Room::where('branch_id', $hq->id)->first();
+        $employee = User::where('email', 'employee@company.com')->first();
+        $barista = User::where('email', 'barista@company.com')->first();
+
+        $employee->update(['telegram_chat_id' => '100001']);
+        $barista->update(['telegram_chat_id' => '200002']);
+
+        $order = DrinkOrder::create([
+            'user_id' => $employee->id,
+            'branch_id' => $hq->id,
+            'room_id' => $room->id,
+            'order_type' => 'instant',
+            'status' => 'approved',
+        ]);
+
+        // 1. Secret token enforcement when configured
+        config(['services.telegram.webhook_secret' => 'my-secret-xyz']);
+        $this->postJson('/telegram/webhook', ['update_id' => 1])->assertStatus(403);
+
+        // 2. Regular employee cannot trigger barista_accept_ even with valid secret
+        $this->withHeaders(['X-Telegram-Bot-Api-Secret-Token' => 'my-secret-xyz'])
+            ->postJson('/telegram/webhook', [
+                'callback_query' => [
+                    'id' => 'cb1',
+                    'from' => ['id' => 100001],
+                    'message' => ['chat' => ['id' => 100001]],
+                    'data' => "barista_accept_{$order->id}",
+                ],
+            ])->assertStatus(200);
+        $this->assertEquals('approved', $order->fresh()->status);
+
+        // 3. Barista CAN accept and mark ready
+        $this->withHeaders(['X-Telegram-Bot-Api-Secret-Token' => 'my-secret-xyz'])
+            ->postJson('/telegram/webhook', [
+                'callback_query' => [
+                    'id' => 'cb2',
+                    'from' => ['id' => 200002],
+                    'message' => ['chat' => ['id' => 200002]],
+                    'data' => "barista_accept_{$order->id}",
+                ],
+            ])->assertStatus(200);
+        $this->assertEquals('preparing', $order->fresh()->status);
+        $this->assertEquals($barista->id, $order->fresh()->barista_id);
+
+        // 4. Mark completed, then verify old barista_accept_ cannot revert completed order
+        $order->update(['status' => 'completed', 'completed_at' => now()]);
+        $this->withHeaders(['X-Telegram-Bot-Api-Secret-Token' => 'my-secret-xyz'])
+            ->postJson('/telegram/webhook', [
+                'callback_query' => [
+                    'id' => 'cb3',
+                    'from' => ['id' => 200002],
+                    'message' => ['chat' => ['id' => 200002]],
+                    'data' => "barista_accept_{$order->id}",
+                ],
+            ])->assertStatus(200);
+        $this->assertEquals('completed', $order->fresh()->status);
+    }
+
+    public function test_admin_unlink_telegram_clears_remember_token(): void
+    {
+        $admin = User::where('role', 'admin')->first();
+        $employee = User::where('email', 'employee@company.com')->first();
+        $employee->forceFill([
+            'telegram_chat_id' => '555666777',
+            'telegram_username' => 'emily_tg',
+            'remember_token' => 'secret-remember-token',
+        ])->save();
+
+        Livewire::actingAs($admin)
+            ->test('admin.approval-portal')
+            ->call('unlinkTelegram', $employee->id);
+
+        $fresh = $employee->fresh();
+        $this->assertNull($fresh->telegram_chat_id);
+        $this->assertNull($fresh->telegram_username);
+        $this->assertNull($fresh->remember_token);
     }
 }

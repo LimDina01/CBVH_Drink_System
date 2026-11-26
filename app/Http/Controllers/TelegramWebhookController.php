@@ -10,24 +10,34 @@ use Illuminate\Support\Facades\Log;
 
 class TelegramWebhookController extends Controller
 {
-    public function __construct(protected TelegramService $telegram)
-    {
-    }
+    public function __construct(protected TelegramService $telegram) {}
 
     public function handle(Request $request): JsonResponse
     {
+        $expectedSecret = config('services.telegram.webhook_secret');
+        if (! empty($expectedSecret)) {
+            $headerSecret = (string) $request->header('X-Telegram-Bot-Api-Secret-Token', '');
+            if (! hash_equals((string) $expectedSecret, $headerSecret)) {
+                Log::warning('Rejected Telegram webhook call with invalid secret token.');
+
+                return response()->json(['ok' => false, 'error' => 'Unauthorized'], 403);
+            }
+        }
+
         $update = $request->all();
         Log::info('Telegram Webhook Update Received', $update);
 
         // Handle inline button callback queries
         if (isset($update['callback_query'])) {
             $this->handleCallbackQuery($update['callback_query']);
+
             return response()->json(['ok' => true]);
         }
 
         // Handle normal text messages / commands
         if (isset($update['message'])) {
             $this->handleMessage($update['message']);
+
             return response()->json(['ok' => true]);
         }
 
@@ -39,7 +49,9 @@ class TelegramWebhookController extends Controller
         $chatId = $message['chat']['id'] ?? null;
         $text = trim($message['text'] ?? '');
 
-        if (!$chatId) return;
+        if (! $chatId) {
+            return;
+        }
 
         $username = $message['from']['username'] ?? null;
         $user = $this->telegram->findLinkedTelegramUser((string) $chatId, $username);
@@ -50,20 +62,20 @@ class TelegramWebhookController extends Controller
             if ($user) {
                 $branchName = $user->branch?->name ?? 'HQ';
                 $welcome = "👋 <b>Welcome back, {$user->name}!</b>\n\n"
-                         . "<b>Branch:</b> {$branchName}\n"
-                         . "<b>Role:</b> " . strtoupper($user->role) . "\n\n"
-                         . "Tap below to open CBVH Drink System:";
+                         ."<b>Branch:</b> {$branchName}\n"
+                         .'<b>Role:</b> '.strtoupper($user->role)."\n\n"
+                         .'Tap below to open CBVH Drink System:';
                 $btnLabel = '🚀 Open CBVH Drink System';
             } else {
                 $welcome = "👋 <b>Welcome to CBVH Drink System!</b>\n\n"
-                         . "Tap below and sign in <b>once</b> with your staff email &amp; password to link your Telegram account:";
+                         .'Tap below and sign in <b>once</b> with your Employee ID (or email) &amp; password to link your Telegram account:';
                 $btnLabel = '🔑 Open & Sign In';
             }
 
             $keyboard = [
                 [
                     ['text' => $btnLabel, 'web_app' => ['url' => $webAppUrl]],
-                ]
+                ],
             ];
 
             $this->telegram->sendMessage($chatId, $welcome, $keyboard);
@@ -72,86 +84,153 @@ class TelegramWebhookController extends Controller
 
     protected function handleCallbackQuery(array $callback): void
     {
-        $callbackId = $callback['id'] ?? null;
-        $chatId = $callback['message']['chat']['id'] ?? null;
+        $chatId = $callback['from']['id'] ?? ($callback['message']['chat']['id'] ?? null);
         $data = $callback['data'] ?? '';
 
-        if (!$chatId) return;
+        if (! $chatId) {
+            return;
+        }
 
-        // 1. Drink Approval by HOD
+        $username = $callback['from']['username'] ?? null;
+        $actor = $this->telegram->findLinkedTelegramUser((string) $chatId, $username);
+        if (! $actor) {
+            $this->telegram->sendMessage($chatId, '🔒 Your Telegram account is not linked. Please open the Mini App and sign in first.');
+
+            return;
+        }
+
+        // 1. Drink Approval by HOD / Admin
         if (str_starts_with($data, 'drink_approve_')) {
+            if (! $actor->isHod()) {
+                $this->telegram->sendMessage($chatId, '⛔ You do not have permission to approve orders.');
+
+                return;
+            }
+
             $orderId = str_replace('drink_approve_', '', $data);
             $order = DrinkOrder::find($orderId);
             if ($order && $order->status === 'pending_approval') {
                 $order->update([
                     'status' => 'approved',
+                    'approved_by' => $actor->id,
                     'approved_at' => now(),
                 ]);
 
                 $this->telegram->sendMessage($chatId, "✅ <b>Drink Request #{$orderId} APPROVED</b>. The ticket has been forwarded to the Barista / Kitchen.");
-                
-                // Notify requester
+
                 if ($order->user && $order->user->telegram_chat_id) {
                     $this->telegram->sendMessage($order->user->telegram_chat_id, "🎉 Good news! Your drink request #{$orderId} was <b>APPROVED</b> and sent to the Barista.");
                 }
 
-                // Notify barista
                 $this->telegram->notifyBaristaForDrinkOrder($order);
             }
         } elseif (str_starts_with($data, 'drink_reject_')) {
+            if (! $actor->isHod()) {
+                $this->telegram->sendMessage($chatId, '⛔ You do not have permission to reject orders.');
+
+                return;
+            }
+
             $orderId = str_replace('drink_reject_', '', $data);
             $order = DrinkOrder::find($orderId);
             if ($order && $order->status === 'pending_approval') {
                 $order->update([
                     'status' => 'rejected_by_approver',
-                    'approver_rejection_reason' => 'Rejected by manager/admin',
+                    'approver_rejection_reason' => "Rejected by {$actor->name}",
                 ]);
 
                 $this->telegram->sendMessage($chatId, "❌ <b>Drink Request #{$orderId} REJECTED</b>.");
-                
+
                 if ($order->user && $order->user->telegram_chat_id) {
                     $this->telegram->sendMessage($order->user->telegram_chat_id, "⚠️ Notice: Your drink request #{$orderId} was <b>rejected</b> by the approver.");
                 }
             }
         }
 
-        // 2. Barista Accept / Reject
+        // 2. Barista Accept / Ready
         elseif (str_starts_with($data, 'barista_accept_')) {
+            if (! $actor->isBarista()) {
+                $this->telegram->sendMessage($chatId, '⛔ Only Barista or Admin staff can accept kitchen orders.');
+
+                return;
+            }
+
             $orderId = str_replace('barista_accept_', '', $data);
             $order = DrinkOrder::find($orderId);
-            if ($order) {
-                $order->update([
-                    'status' => 'preparing',
-                    'barista_accepted_at' => now(),
-                ]);
+            if (! $order || $order->status !== 'approved') {
+                $this->telegram->sendMessage($chatId, "ℹ️ Order #{$orderId} is already processed or no longer waiting in queue.");
 
-                $keyboard = [
-                    [['text' => '☕ Mark Ready for Delivery', 'callback_data' => "barista_ready_{$orderId}"]]
-                ];
+                return;
+            }
 
-                $this->telegram->sendMessage($chatId, "👨‍🍳 <b>Order #{$orderId} Accepted!</b> You are now preparing this order.", $keyboard);
+            if ($order->order_type === 'meeting' && $order->delivery_time && $order->delivery_time->isAfter(today()->endOfDay())) {
+                $this->telegram->sendMessage($chatId, "🔒 Order #{$orderId} is for a future meeting day and cannot be started yet.");
 
-                if ($order->user && $order->user->telegram_chat_id) {
-                    $this->telegram->sendMessage($order->user->telegram_chat_id, "☕ The Barista has accepted your drink order #{$orderId} and is currently preparing it!");
-                }
+                return;
+            }
+
+            $order->update([
+                'status' => 'preparing',
+                'barista_id' => $actor->id,
+                'barista_accepted_at' => now(),
+            ]);
+
+            $readyLabel = $order->order_type === 'recurring'
+                ? '🏁 Mark Delivered & Complete'
+                : '☕ Mark Ready for Delivery';
+
+            $keyboard = [
+                [['text' => $readyLabel, 'callback_data' => "barista_ready_{$orderId}"]],
+            ];
+
+            $this->telegram->sendMessage($chatId, "👨‍🍳 <b>Order #{$orderId} Accepted!</b> You are now preparing this order.", $keyboard);
+
+            if ($order->user && $order->user->telegram_chat_id) {
+                $this->telegram->sendMessage($order->user->telegram_chat_id, "☕ The Barista has accepted your drink order #{$orderId} and is currently preparing it!");
             }
         } elseif (str_starts_with($data, 'barista_ready_')) {
+            if (! $actor->isBarista()) {
+                $this->telegram->sendMessage($chatId, '⛔ Only Barista or Admin staff can complete kitchen orders.');
+
+                return;
+            }
+
             $orderId = str_replace('barista_ready_', '', $data);
             $order = DrinkOrder::find($orderId);
-            if ($order) {
+            if (! $order || ! in_array($order->status, ['approved', 'preparing'], true)) {
+                $this->telegram->sendMessage($chatId, "ℹ️ Order #{$orderId} is already in delivery or completed.");
+
+                return;
+            }
+
+            if ($order->order_type === 'recurring') {
                 $order->update([
-                    'status' => 'in_delivery',
+                    'status' => 'completed',
+                    'barista_id' => $order->barista_id ?? $actor->id,
+                    'barista_accepted_at' => $order->barista_accepted_at ?? now(),
                     'ready_at' => now(),
                     'in_delivery_at' => now(),
+                    'completed_at' => now(),
                 ]);
+                $this->telegram->sendMessage($chatId, "🏁 <b>Schedule Order #{$orderId} Delivered &amp; Completed!</b>");
 
-                $this->telegram->sendMessage($chatId, "🚚 <b>Order #{$orderId} Out for Delivery!</b> Waiting for user confirmation.");
-                $this->telegram->notifyUserOrderInDelivery($order);
+                return;
             }
+
+            $order->update([
+                'status' => 'in_delivery',
+                'barista_id' => $order->barista_id ?? $actor->id,
+                'barista_accepted_at' => $order->barista_accepted_at ?? now(),
+                'ready_at' => now(),
+                'in_delivery_at' => now(),
+            ]);
+
+            $this->telegram->sendMessage($chatId, "🚚 <b>Order #{$orderId} Out for Delivery!</b> Waiting for user confirmation.");
+            $this->telegram->notifyUserOrderInDelivery($order);
         } elseif (str_starts_with($data, 'user_received_')) {
             $orderId = str_replace('user_received_', '', $data);
             $order = DrinkOrder::find($orderId);
-            if ($order && $order->status === 'in_delivery') {
+            if ($order && ($order->user_id === $actor->id || $actor->isAdmin()) && $order->status === 'in_delivery') {
                 $order->update([
                     'status' => 'completed',
                     'completed_at' => now(),
@@ -163,4 +242,3 @@ class TelegramWebhookController extends Controller
         }
     }
 }
-

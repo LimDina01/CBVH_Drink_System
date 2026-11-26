@@ -11,6 +11,7 @@ use Illuminate\Support\Facades\Log;
 class TelegramService
 {
     protected ?string $botToken;
+
     protected string $apiUrl;
 
     public function __construct()
@@ -40,9 +41,11 @@ class TelegramService
 
         try {
             $response = $this->httpClient()->get("{$this->apiUrl}/getMe");
+
             return $response->successful() ? $response->json() : null;
         } catch (\Exception $e) {
-            Log::error("TelegramService getMe failed: " . $e->getMessage());
+            Log::error('TelegramService getMe failed: '.$e->getMessage());
+
             return null;
         }
     }
@@ -60,9 +63,11 @@ class TelegramService
             $response = $this->httpClient()->post("{$this->apiUrl}/setWebhook", [
                 'url' => $url,
             ]);
+
             return $response->json();
         } catch (\Exception $e) {
-            Log::error("TelegramService setWebhook failed: " . $e->getMessage());
+            Log::error('TelegramService setWebhook failed: '.$e->getMessage());
+
             return null;
         }
     }
@@ -78,9 +83,11 @@ class TelegramService
 
         try {
             $response = $this->httpClient()->get("{$this->apiUrl}/getWebhookInfo");
+
             return $response->successful() ? $response->json() : null;
         } catch (\Exception $e) {
-            Log::error("TelegramService getWebhookInfo failed: " . $e->getMessage());
+            Log::error('TelegramService getWebhookInfo failed: '.$e->getMessage());
+
             return null;
         }
     }
@@ -91,8 +98,11 @@ class TelegramService
     public function findLinkedTelegramUser(string $chatId, ?string $username = null): ?User
     {
         $user = User::where('telegram_chat_id', $chatId)->first();
-        if (!$user && $username) {
-            $user = User::where('telegram_username', $username)->first();
+        if (! $user && $username) {
+            // Only fall back to username if no chat ID is bound yet, preventing @username takeover of an already-bound account
+            $user = User::where('telegram_username', $username)
+                ->whereNull('telegram_chat_id')
+                ->first();
             if ($user) {
                 $user->update(['telegram_chat_id' => $chatId]);
             }
@@ -107,7 +117,7 @@ class TelegramService
     public function resolveUserFromInitData(string $initData): ?User
     {
         $parsed = $this->validateInitData($initData);
-        if (!$parsed || empty($parsed['user']['id'])) {
+        if (! $parsed || empty($parsed['user']['id'])) {
             return null;
         }
 
@@ -123,7 +133,7 @@ class TelegramService
     public function bindTelegramToUser(User $user, string $initData): bool
     {
         $parsed = $this->validateInitData($initData);
-        if (!$parsed || empty($parsed['user']['id'])) {
+        if (! $parsed || empty($parsed['user']['id'])) {
             return false;
         }
 
@@ -131,8 +141,9 @@ class TelegramService
         $username = $parsed['user']['username'] ?? null;
 
         // Single-Device Lock: If user is ALREADY bound to a different Telegram account, refuse to overwrite!
-        if (!empty($user->telegram_chat_id) && (string) $user->telegram_chat_id !== $chatId) {
+        if (! empty($user->telegram_chat_id) && (string) $user->telegram_chat_id !== $chatId) {
             Log::warning("Blocked unauthorized Telegram re-bind for user {$user->id}. Existing: {$user->telegram_chat_id}, Attempted: {$chatId}");
+
             return false;
         }
 
@@ -184,9 +195,9 @@ class TelegramService
         $empId = $user->employee_id ?: $user->name;
         $usernameInfo = $attemptedUsername ? " (@{$attemptedUsername})" : '';
         $message = "🚨 <b>CBVH Security Alert</b>\n\n"
-                 . "Someone attempted to sign in to your staff account (<b>{$empId}</b>) using another Telegram account{$usernameInfo}.\n\n"
-                 . "🔒 <b>Action Taken:</b> The sign-in was blocked because your account is securely locked to this device.\n\n"
-                 . "If this was not you, please notify HR or System Admin immediately to reset your password.";
+                 ."Someone attempted to sign in to your staff account (<b>{$empId}</b>) using another Telegram account{$usernameInfo}.\n\n"
+                 ."🔒 <b>Action Taken:</b> The sign-in was blocked because your account is securely locked to this device.\n\n"
+                 .'If this was not you, please notify HR or System Admin immediately to reset your password.';
 
         $this->sendMessage($user->telegram_chat_id, $message);
     }
@@ -198,6 +209,7 @@ class TelegramService
     {
         if (empty($this->botToken)) {
             Log::warning("TelegramService: TELEGRAM_BOT_TOKEN is not configured. Message not sent: {$text}");
+
             return null;
         }
 
@@ -215,12 +227,14 @@ class TelegramService
 
         try {
             $response = $this->httpClient()->post("{$this->apiUrl}/sendMessage", $payload);
-            if (!$response->successful()) {
-                Log::error("TelegramService sendMessage failed", ['response' => $response->json(), 'payload' => $payload]);
+            if (! $response->successful()) {
+                Log::error('TelegramService sendMessage failed', ['response' => $response->json(), 'payload' => $payload]);
             }
+
             return $response->json();
         } catch (\Exception $e) {
-            Log::error("TelegramService exception: " . $e->getMessage());
+            Log::error('TelegramService exception: '.$e->getMessage());
+
             return null;
         }
     }
@@ -236,7 +250,7 @@ class TelegramService
 
         parse_str($initData, $data);
 
-        if (!isset($data['hash'])) {
+        if (! isset($data['hash'])) {
             return null;
         }
 
@@ -258,14 +272,16 @@ class TelegramService
 
         if (hash_equals($calculatedHash, $hash)) {
             // Check auth_date not older than 24 hours (86400 seconds) to prevent replay attacks
-            if (isset($data['auth_date']) && (time() - (int)$data['auth_date']) > 86400) {
-                Log::warning("Telegram initData expired (auth_date older than 24h)");
+            if (isset($data['auth_date']) && (time() - (int) $data['auth_date']) > 86400) {
+                Log::warning('Telegram initData expired (auth_date older than 24h)');
+
                 return null;
             }
 
             if (isset($data['user'])) {
                 $data['user'] = json_decode($data['user'], true);
             }
+
             return $data;
         }
 
@@ -288,11 +304,11 @@ class TelegramService
                 $choice = $val['km'] ?? $val['en'] ?? '';
                 $parts[] = "{$layer}: {$choice}";
             } else {
-                $parts[] = ucfirst($key) . ': ' . $val;
+                $parts[] = ucfirst($key).': '.$val;
             }
         }
 
-        return ' (' . implode(', ', $parts) . ')';
+        return ' ('.implode(', ', $parts).')';
     }
 
     /**
@@ -322,9 +338,9 @@ class TelegramService
             $roomName = $order->room?->name ?? ($order->location_detail ?: 'Main Area');
 
             $text = "☕ <b>New Drink Request #{$order->id}</b>\n\n"
-                  . "<b>Requester:</b> {$requesterName}\n"
-                  . "<b>Room:</b> {$roomName}\n"
-                  . "<b>Items:</b>\n";
+                  ."<b>Requester:</b> {$requesterName}\n"
+                  ."<b>Room:</b> {$roomName}\n"
+                  ."<b>Items:</b>\n";
 
             foreach ($order->items as $item) {
                 $drinkName = $item->drinkItem?->name ?? 'Drink';
@@ -340,14 +356,14 @@ class TelegramService
                 [
                     ['text' => '✅ Approve', 'callback_data' => "drink_approve_{$order->id}"],
                     ['text' => '❌ Reject', 'callback_data' => "drink_reject_{$order->id}"],
-                ]
+                ],
             ];
 
             foreach ($approvers as $approver) {
                 $this->sendMessage($approver->telegram_chat_id, $text, $keyboard);
             }
         } catch (\Throwable $e) {
-            Log::error("Failed to notify approvers for order #{$order->id}: " . $e->getMessage());
+            Log::error("Failed to notify approvers for order #{$order->id}: ".$e->getMessage());
         }
     }
 
@@ -381,13 +397,13 @@ class TelegramService
             $requesterName = $order->user?->name ?? 'Staff';
 
             $text = "🔔 <b>{$typeBadge} — Order #{$order->id}</b>\n\n"
-                  . "<b>Branch:</b> {$branchName}\n"
-                  . "<b>Location:</b> {$location}\n"
-                  . "<b>Requester:</b> {$requesterName}\n"
-                  . "<b>Target Time:</b> {$when}\n";
+                  ."<b>Branch:</b> {$branchName}\n"
+                  ."<b>Location:</b> {$location}\n"
+                  ."<b>Requester:</b> {$requesterName}\n"
+                  ."<b>Target Time:</b> {$when}\n";
 
             if ($order->extend_reason) {
-                $text .= "<b>Reason:</b> " . ucfirst(str_replace('_', ' ', $order->extend_reason)) . "\n";
+                $text .= '<b>Reason:</b> '.ucfirst(str_replace('_', ' ', $order->extend_reason))."\n";
             }
 
             $text .= "\n<b>Items:</b>\n";
@@ -404,14 +420,14 @@ class TelegramService
             $keyboard = [
                 [
                     ['text' => '👍 Start Making (Package)', 'callback_data' => "barista_accept_{$order->id}"],
-                ]
+                ],
             ];
 
             foreach ($baristas as $barista) {
                 $this->sendMessage($barista->telegram_chat_id, $text, $keyboard);
             }
         } catch (\Throwable $e) {
-            Log::error("Failed to notify barista for order #{$order->id}: " . $e->getMessage());
+            Log::error("Failed to notify barista for order #{$order->id}: ".$e->getMessage());
         }
     }
 
@@ -422,34 +438,33 @@ class TelegramService
     {
         try {
             $order->loadMissing(['user', 'room', 'branch']);
-            if (!$order->user || !$order->user->telegram_chat_id) {
+            if (! $order->user || ! $order->user->telegram_chat_id) {
                 return;
             }
 
-            $appUrl = config('app.url');
+            $appUrl = config('services.telegram.webapp_url') ?: config('app.url');
             if (empty($appUrl) || str_starts_with($appUrl, 'http://localhost')) {
-                $appUrl = 'https://orderdrink.cbvh66.com:3000';
+                $appUrl = 'https://drinks.cbvh66.com';
             }
 
             $roomName = $order->room?->name ?? ($order->location_detail ?: 'CBVH Office');
-            $isBranch = $order->branch && !$order->branch->is_hq;
+            $isBranch = $order->branch && ! $order->branch->is_hq;
             $minsText = $isBranch ? '30 minutes' : '10 minutes';
 
             $text = "🚚 <b>Drink Order #{$order->id} is OUT FOR DELIVERY!</b>\n\n"
-                  . "📍 <b>Destination:</b> {$roomName}\n"
-                  . "⏱️ Drinks will auto-complete in {$minsText} upon arrival.\n\n"
-                  . "Tap below to view live order status or confirm receipt:";
+                  ."📍 <b>Destination:</b> {$roomName}\n"
+                  ."⏱️ Drinks will auto-complete in {$minsText} upon arrival.\n\n"
+                  .'Tap below to view live order status or confirm receipt:';
 
             $keyboard = [
                 [
                     ['text' => '📱 Open Mini App • បើកកម្មវិធី', 'web_app' => ['url' => $appUrl]],
-                ]
+                ],
             ];
 
             $this->sendMessage($order->user->telegram_chat_id, $text, $keyboard);
         } catch (\Throwable $e) {
-            Log::error("Failed to notify user for order in delivery #{$order->id}: " . $e->getMessage());
+            Log::error("Failed to notify user for order in delivery #{$order->id}: ".$e->getMessage());
         }
     }
 }
-

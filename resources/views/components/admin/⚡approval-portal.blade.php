@@ -191,6 +191,13 @@ new class extends Component
         $user = User::find($userId);
         if ($user) {
             app(TelegramService::class)->unlinkUser($user);
+            // Invalidate active remember token and DB sessions so an unlinked device cannot silently re-bind
+            $user->forceFill(['remember_token' => null])->save();
+            if (config('session.driver') === 'database') {
+                \Illuminate\Support\Facades\DB::table(config('session.table', 'sessions'))
+                    ->where('user_id', $user->id)
+                    ->delete();
+            }
             $this->flashMessage = "Unlinked Telegram from {$user->name}.";
             $this->flashType = 'success';
         }
