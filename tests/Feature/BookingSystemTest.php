@@ -2239,4 +2239,101 @@ class BookingSystemTest extends TestCase
             'status' => 'scheduled',
         ]);
     }
+
+    public function test_user_can_cancel_own_approved_meeting_order_and_barista_receives_telegram_alert(): void
+    {
+        Http::fake(['*' => Http::response(['ok' => true], 200)]);
+        config(['services.telegram.bot_token' => 'test-token']);
+
+        $barista = User::where('role', 'barista')->first();
+        $barista->update(['telegram_chat_id' => '999888777']);
+
+        $employee = User::where('email', 'employee@company.com')->first();
+        $hq = Branch::where('is_hq', true)->first();
+        $room = Room::where('branch_id', $hq->id)->first();
+        $drink = DrinkItem::where('branch_id', $hq->id)->first();
+
+        $meetingOrder = DrinkOrder::create([
+            'user_id' => $employee->id,
+            'branch_id' => $hq->id,
+            'room_id' => $room->id,
+            'order_type' => 'meeting',
+            'delivery_time' => now()->addDay(),
+            'status' => 'approved',
+        ]);
+        $meetingOrder->items()->create(['drink_item_id' => $drink->id, 'drink_name_snapshot' => $drink->name, 'quantity' => 4]);
+
+        $instantOrder = DrinkOrder::create([
+            'user_id' => $employee->id,
+            'branch_id' => $hq->id,
+            'room_id' => $room->id,
+            'order_type' => 'instant',
+            'status' => 'approved',
+        ]);
+
+        $preparingMeeting = DrinkOrder::create([
+            'user_id' => $employee->id,
+            'branch_id' => $hq->id,
+            'room_id' => $room->id,
+            'order_type' => 'meeting',
+            'delivery_time' => now()->addDay(),
+            'status' => 'preparing',
+        ]);
+
+        Livewire::actingAs($employee)
+            ->test('mini-app.booking-app')
+            ->call('cancelMeetingOrder', $meetingOrder->id)
+            ->assertSet('flashType', 'success')
+            ->call('cancelMeetingOrder', $instantOrder->id)
+            ->assertSet('flashType', 'error')
+            ->call('cancelMeetingOrder', $preparingMeeting->id)
+            ->assertSet('flashType', 'error');
+
+        $this->assertEquals('cancelled', $meetingOrder->fresh()->status);
+        $this->assertEquals('approved', $instantOrder->fresh()->status);
+        $this->assertEquals('preparing', $preparingMeeting->fresh()->status);
+
+        Http::assertSent(function ($request) use ($meetingOrder) {
+            return str_contains($request->url(), 'sendMessage')
+                && ($request['chat_id'] ?? null) === '999888777'
+                && str_contains($request['text'] ?? '', "ORDER CANCELLED (#{$meetingOrder->id})");
+        });
+    }
+
+    public function test_admin_can_cancel_active_order_and_cancelled_orders_are_excluded_from_cup_totals(): void
+    {
+        Http::fake(['*' => Http::response(['ok' => true], 200)]);
+        config(['services.telegram.bot_token' => 'test-token']);
+
+        $admin = User::where('role', 'admin')->first();
+        $barista = User::where('role', 'barista')->first();
+        $barista->update(['telegram_chat_id' => '999888777']);
+
+        $employee = User::where('email', 'employee@company.com')->first();
+        $employee->update(['telegram_chat_id' => '111222333']);
+
+        $hq = Branch::where('is_hq', true)->first();
+        $room = Room::where('branch_id', $hq->id)->first();
+        $drink = DrinkItem::where('branch_id', $hq->id)->first();
+
+        $preparingOrder = DrinkOrder::create([
+            'user_id' => $employee->id,
+            'branch_id' => $hq->id,
+            'room_id' => $room->id,
+            'order_type' => 'instant',
+            'status' => 'preparing',
+        ]);
+        $preparingOrder->items()->create(['drink_item_id' => $drink->id, 'drink_name_snapshot' => $drink->name, 'quantity' => 3]);
+
+        Livewire::actingAs($admin)
+            ->test('admin.approval-portal')
+            ->call('cancelOrder', $preparingOrder->id)
+            ->assertSet('flashType', 'success')
+            ->assertViewHas('totalCups', 0);
+
+        $this->assertEquals('cancelled', $preparingOrder->fresh()->status);
+
+        Http::assertSent(fn ($req) => ($req['chat_id'] ?? null) === '999888777');
+        Http::assertSent(fn ($req) => ($req['chat_id'] ?? null) === '111222333');
+    }
 }

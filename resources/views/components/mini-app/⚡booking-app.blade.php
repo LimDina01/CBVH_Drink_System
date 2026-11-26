@@ -363,6 +363,44 @@ new class extends Component
         }
     }
 
+    public function cancelMeetingOrder(int $orderId): void
+    {
+        $userId = Auth::id() ?? $this->currentUserId;
+        if (! $userId) {
+            return;
+        }
+
+        $cancelledOrder = DB::transaction(function () use ($orderId, $userId) {
+            $order = DrinkOrder::where('id', $orderId)
+                ->where('user_id', $userId)
+                ->lockForUpdate()
+                ->first();
+
+            if (! $order || $order->order_type !== 'meeting' || $order->status !== 'approved') {
+                return null;
+            }
+
+            $order->update([
+                'status' => 'cancelled',
+                'approver_rejection_reason' => 'Cancelled by requester',
+            ]);
+
+            return $order->fresh();
+        });
+
+        if (! $cancelledOrder) {
+            $this->flashMessage = __('cbvh.cannot_cancel_order');
+            $this->flashType = 'error';
+            return;
+        }
+
+        $actor = Auth::user() ?? User::find($userId);
+        app(TelegramService::class)->notifyBaristaOrderCancelled($cancelledOrder, $actor);
+
+        $this->flashMessage = __('cbvh.order_cancelled_success', ['id' => $cancelledOrder->id]);
+        $this->flashType = 'success';
+    }
+
     public function submitDrinkOrder(): void
     {
         if (empty($this->drinkCart) || !$this->selectedRoomId) {
@@ -1060,11 +1098,12 @@ new class extends Component
                                         'in_delivery' => __('cbvh.status_in_delivery'),
                                         'completed' => $order->auto_completed ? __('cbvh.status_auto_completed') : __('cbvh.status_completed'),
                                         'rejected_by_barista' => __('cbvh.status_rejected'),
+                                        'cancelled' => __('cbvh.status_cancelled'),
                                         default => $order->status,
                                     };
                                 @endphp
                                 <span class="px-2.5 py-0.5 rounded-full text-[10px] font-bold shrink-0
-                                    {{ $order->status === 'completed' ? 'bg-emerald-100 text-emerald-800' : ($order->status === 'in_delivery' ? 'bg-blue-100 text-blue-800 animate-pulse' : (str_contains($order->status, 'rejected') ? 'bg-rose-100 text-rose-800' : 'bg-[#F5EDE7] text-[#835440] dark:bg-[#3A2C26] dark:text-[#E8CFC1]')) }}">
+                                    {{ $order->status === 'completed' ? 'bg-emerald-100 text-emerald-800' : ($order->status === 'in_delivery' ? 'bg-blue-100 text-blue-800 animate-pulse' : (in_array($order->status, ['rejected_by_barista', 'cancelled']) || str_contains($order->status, 'rejected') ? 'bg-rose-100 text-rose-800' : 'bg-[#F5EDE7] text-[#835440] dark:bg-[#3A2C26] dark:text-[#E8CFC1]')) }}">
                                     {{ $statusText }}
                                 </span>
                             </div>
@@ -1087,7 +1126,16 @@ new class extends Component
                                 @endif
                             </div>
 
-                            @if($order->status === 'in_delivery')
+                            @if($order->order_type === 'meeting' && $order->status === 'approved')
+                                <div class="pt-2 border-t border-[#FAF6F3] dark:border-[#3D2F29] flex justify-end">
+                                    <button type="button"
+                                            wire:click="cancelMeetingOrder({{ $order->id }})"
+                                            wire:confirm="{{ __('cbvh.confirm_cancel_meeting') }}"
+                                            class="py-1.5 px-3 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold text-[11px] rounded-xl transition cursor-pointer">
+                                        ❌ {{ __('cbvh.btn_cancel_order') }}
+                                    </button>
+                                </div>
+                            @elseif($order->status === 'in_delivery')
                                 @php
                                     $autoMins = ($order->branch && !$order->branch->is_hq) ? 30 : 10;
                                 @endphp

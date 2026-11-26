@@ -411,4 +411,75 @@ class TelegramService
             Log::error("Failed to notify user for order in delivery #{$order->id}: ".$e->getMessage());
         }
     }
+
+    /**
+     * Notification: Meeting/Admin order cancelled -> Alert Baristas so they don't prepare it by mistake.
+     */
+    public function notifyBaristaOrderCancelled($order, ?User $cancelledBy = null): void
+    {
+        try {
+            $order->loadMissing(['user', 'branch', 'room', 'items.drinkItem']);
+
+            $baristas = User::where('role', 'barista')
+                ->whereNotNull('telegram_chat_id')
+                ->get();
+
+            $typeLabel = match ($order->order_type) {
+                'meeting' => '📅 Meeting Drink',
+                'extend' => '➕ Order More / Spilled',
+                'recurring' => '📆 Schedule Order',
+                default => '⚡ Quick Drink',
+            };
+
+            $branchName = $order->branch?->name ?? 'CBVH';
+            $roomName = $order->room?->name ?? ($order->location_detail ?: 'Office');
+            $whoCancelled = $cancelledBy ? $cancelledBy->name : ($order->user?->name ?? 'Staff');
+
+            $text = "❌ <b>ORDER CANCELLED (#{$order->id})</b>\n\n"
+                  ."<b>Type:</b> {$typeLabel}\n"
+                  ."<b>Location:</b> {$branchName} — {$roomName}\n"
+                  ."<b>Requester:</b> {$order->user?->name}\n"
+                  ."<b>Cancelled By:</b> {$whoCancelled}\n";
+
+            if ($order->delivery_time) {
+                $text .= "<b>Meeting Time:</b> {$order->delivery_time->format('d M Y, h:i A')}\n";
+            }
+
+            $text .= "\n<b>Items:</b>\n";
+            foreach ($order->items as $item) {
+                $drinkName = $item->drinkItem?->name ?? $item->drink_name_snapshot ?? 'Drink';
+                $text .= "• {$item->quantity}x {$drinkName}\n";
+            }
+
+            $text .= "\n⚠️ <b>Please DO NOT prepare this order.</b>";
+
+            foreach ($baristas as $barista) {
+                $this->sendMessage($barista->telegram_chat_id, $text);
+            }
+        } catch (\Throwable $e) {
+            Log::error("Failed to notify barista for cancelled order #{$order->id}: ".$e->getMessage());
+        }
+    }
+
+    /**
+     * Notification: Admin cancelled an order -> Inform the requester on Telegram.
+     */
+    public function notifyUserOrderCancelled($order, ?User $cancelledBy = null): void
+    {
+        try {
+            $order->loadMissing(['user']);
+            if (! $order->user || ! $order->user->telegram_chat_id) {
+                return;
+            }
+
+            $byName = $cancelledBy?->name ?? 'Admin';
+            $text = "❌ <b>Drink Order #{$order->id} Cancelled</b>\n\n"
+                  ."Cancelled by Admin ({$byName}).\n"
+                  .'If your meeting moved to a new time or room, please place a new order in the Mini App.';
+
+            $this->sendMessage($order->user->telegram_chat_id, $text);
+        } catch (\Throwable $e) {
+            Log::error("Failed to notify user for cancelled order #{$order->id}: ".$e->getMessage());
+        }
+    }
 }

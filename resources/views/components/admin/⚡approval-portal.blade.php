@@ -355,6 +355,44 @@ new class extends Component
         }
     }
 
+    public function cancelOrder(int $orderId): void
+    {
+        if (! Auth::user()?->isAdmin()) {
+            return;
+        }
+
+        $cancelledOrder = DB::transaction(function () use ($orderId) {
+            $order = DrinkOrder::where('id', $orderId)->lockForUpdate()->first();
+            if (! $order || ! in_array($order->status, ['approved', 'preparing', 'in_delivery'], true)) {
+                return null;
+            }
+
+            $adminName = Auth::user()?->name ?? 'Admin';
+            $order->update([
+                'status' => 'cancelled',
+                'approver_rejection_reason' => "Cancelled by Admin ({$adminName})",
+            ]);
+
+            return $order->fresh();
+        });
+
+        if (! $cancelledOrder) {
+            $this->flashMessage = __('cbvh.cannot_cancel_order');
+            $this->flashType = 'error';
+            return;
+        }
+
+        $admin = Auth::user();
+        $telegram = app(TelegramService::class);
+        $telegram->notifyBaristaOrderCancelled($cancelledOrder, $admin);
+        if ((int) $cancelledOrder->user_id !== (int) $admin->id) {
+            $telegram->notifyUserOrderCancelled($cancelledOrder, $admin);
+        }
+
+        $this->flashMessage = __('cbvh.order_cancelled_success', ['id' => $cancelledOrder->id]);
+        $this->flashType = 'success';
+    }
+
     public function updateUserRole($userId, $role)
     {
         if ((int) $userId === (int) Auth::id() && $role !== 'admin') {
@@ -853,9 +891,9 @@ new class extends Component
     public function exportDrinkTotalsCsv()
     {
         $queryOrders = $this->buildFilteredOrdersQuery()->with('items.drinkItem')->get();
-        $orders = in_array($this->filterStatus, ['rejected_by_barista', 'rejected_by_approver'], true)
+        $orders = in_array($this->filterStatus, ['cancelled', 'rejected_by_barista', 'rejected_by_approver'], true)
             ? $queryOrders
-            : $queryOrders->whereNotIn('status', ['rejected_by_barista', 'rejected_by_approver']);
+            : $queryOrders->whereNotIn('status', ['cancelled', 'rejected_by_barista', 'rejected_by_approver']);
         $filename = 'cbvh-drink-summary-' . now()->format('Y-m-d_His') . '.csv';
 
         return response()->streamDownload(function () use ($orders) {
@@ -1232,9 +1270,9 @@ new class extends Component
 
         $allFilteredOrders = $this->buildFilteredOrdersQuery()->get();
         $paginatedOrders = $this->buildFilteredOrdersQuery()->paginate($this->perPage);
-        $servedOrders = in_array($this->filterStatus, ['rejected_by_barista', 'rejected_by_approver'], true)
+        $servedOrders = in_array($this->filterStatus, ['cancelled', 'rejected_by_barista', 'rejected_by_approver'], true)
             ? $allFilteredOrders
-            : $allFilteredOrders->whereNotIn('status', ['rejected_by_barista', 'rejected_by_approver']);
+            : $allFilteredOrders->whereNotIn('status', ['cancelled', 'rejected_by_barista', 'rejected_by_approver']);
         $totalCups = $servedOrders->sum(fn($o) => $o->items->sum('quantity'));
 
         $drinkTotals = [];
@@ -1700,6 +1738,7 @@ new class extends Component
                             <option value="preparing">{{ __('cbvh.status_preparing') }}</option>
                             <option value="in_delivery">{{ __('cbvh.status_in_delivery') }}</option>
                             <option value="completed">{{ __('cbvh.status_completed') }}</option>
+                            <option value="cancelled">{{ __('cbvh.status_cancelled') }}</option>
                             <option value="rejected_by_barista">{{ __('cbvh.status_rejected') }}</option>
                         </select>
                     </div>
@@ -1836,7 +1875,7 @@ new class extends Component
                                 </td>
                                 <td class="py-3.5 px-4 whitespace-nowrap">
                                     <span class="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase
-                                        {{ $order->status === 'completed' ? 'bg-emerald-100 text-emerald-800' : ($order->status === 'in_delivery' ? 'bg-blue-100 text-blue-800' : (str_contains($order->status, 'rejected') ? 'bg-rose-100 text-rose-800' : 'bg-[#F5EDE7] text-[#835440]')) }}">
+                                        {{ $order->status === 'completed' ? 'bg-emerald-100 text-emerald-800' : ($order->status === 'in_delivery' ? 'bg-blue-100 text-blue-800' : (in_array($order->status, ['cancelled', 'rejected_by_barista']) || str_contains($order->status, 'rejected') ? 'bg-rose-100 text-rose-800' : 'bg-[#F5EDE7] text-[#835440]')) }}">
                                         {{ __('cbvh.status_' . ($order->status === 'rejected_by_barista' ? 'rejected' : $order->status)) }}
                                     </span>
                                 </td>
@@ -1846,12 +1885,20 @@ new class extends Component
                                             $closeWarning = in_array($order->status, ['approved', 'preparing'])
                                                 ? "⚠️ Warning: Order #{$order->id} is currently " . strtoupper($order->status) . " by the barista. Are you sure you want to override and complete it?"
                                                 : "Mark Order #{$order->id} as completed?";
+                                            $cancelWarning = "Cancel Order #{$order->id}? The Barista will be notified on Telegram.";
                                         @endphp
-                                        <button type="button"
-                                                @click.prevent="askConfirm('{{ addslashes($closeWarning) }}', () => $wire.markOrderCompleted({{ $order->id }}))"
-                                                class="px-2.5 py-1 bg-[#FAF6F3] border border-[#E8DDD6] text-[#2C211C] rounded-lg text-[10px] font-bold cursor-pointer hover:bg-[#F5EDE7]">
-                                            {{ __('cbvh.close_order') }}
-                                        </button>
+                                        <div class="inline-flex items-center gap-1.5">
+                                            <button type="button"
+                                                    @click.prevent="askConfirm('{{ addslashes($closeWarning) }}', () => $wire.markOrderCompleted({{ $order->id }}))"
+                                                    class="px-2.5 py-1 bg-[#FAF6F3] border border-[#E8DDD6] text-[#2C211C] rounded-lg text-[10px] font-bold cursor-pointer hover:bg-[#F5EDE7]">
+                                                {{ __('cbvh.close_order') }}
+                                            </button>
+                                            <button type="button"
+                                                    @click.prevent="askConfirm('{{ addslashes($cancelWarning) }}', () => $wire.cancelOrder({{ $order->id }}))"
+                                                    class="px-2.5 py-1 bg-rose-50 border border-rose-200 text-rose-700 rounded-lg text-[10px] font-bold cursor-pointer hover:bg-rose-100">
+                                                {{ __('cbvh.btn_cancel_order') }}
+                                            </button>
+                                        </div>
                                     @endif
                                 </td>
                             </tr>

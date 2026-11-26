@@ -112,6 +112,11 @@ return [
     'status_completed' => 'Received',
     'status_auto_completed' => 'Auto-Done',
     'status_rejected' => 'Cancelled',
+    'status_cancelled' => 'Cancelled',
+    'btn_cancel_order' => 'Cancel Order',
+    'confirm_cancel_meeting' => 'Cancel this meeting drink order? The Barista will be notified.',
+    'order_cancelled_success' => 'Order #:id has been cancelled and Barista was notified.',
+    'cannot_cancel_order' => 'This order can no longer be cancelled because the Barista has already started preparing it.',
     'in_delivery_notice' => 'Drinks are on the way! Confirm receipt below (auto-completes after :minutes mins).',
     'btn_received_done' => 'Received / Done',
     'btn_order_more_spilled' => 'Order More / Spilled',
@@ -334,4 +339,3 @@ return [
         'Espresso' => 'Espresso',
     ],
 ];
-
