@@ -2312,12 +2312,18 @@ class BookingSystemTest extends TestCase
                 && str_contains($request['text'] ?? '', "ORDER CANCELLED (#{$meetingOrder->id})");
         });
 
-        // Barista Kitchen Display shows the red web alert banner and dismisses it cleanly
+        // Barista Kitchen Display shows the red web alert banner and dismisses it cleanly (persisting across page refresh)
         Livewire::actingAs($barista)
             ->test('barista.kitchen-display')
             ->assertSee(__('cbvh.barista_cancelled_banner', ['id' => $meetingOrder->id]))
             ->assertSee(__('cbvh.barista_cancelled_banner', ['id' => $laterTodayQuickOrder->id]))
             ->call('dismissCancelledAlert', $meetingOrder->id)
+            ->assertDontSee(__('cbvh.barista_cancelled_banner', ['id' => $meetingOrder->id]))
+            ->assertSee(__('cbvh.barista_cancelled_banner', ['id' => $laterTodayQuickOrder->id]));
+
+        // Simulate browser refresh (fresh component mount)
+        Livewire::actingAs($barista)
+            ->test('barista.kitchen-display')
             ->assertDontSee(__('cbvh.barista_cancelled_banner', ['id' => $meetingOrder->id]))
             ->assertSee(__('cbvh.barista_cancelled_banner', ['id' => $laterTodayQuickOrder->id]));
     }

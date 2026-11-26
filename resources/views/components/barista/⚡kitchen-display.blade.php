@@ -5,6 +5,7 @@ use App\Models\Branch;
 use App\Models\DrinkOrder;
 use App\Services\TelegramService;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Cache;
 
 new class extends Component
 {
@@ -14,9 +15,15 @@ new class extends Component
     public array $dismissedCancelledIds = [];
     public array $seenCancelledIds = [];
 
+    protected function dismissedCacheKey(): string
+    {
+        return 'barista_dismissed_cancelled_' . (Auth::id() ?? 0);
+    }
+
     public function mount()
     {
         $this->lastKnownOrderId = (int) (DrinkOrder::max('id') ?? 0);
+        $this->dismissedCancelledIds = Cache::get($this->dismissedCacheKey(), []);
         $this->seenCancelledIds = DrinkOrder::where('status', 'cancelled')
             ->where('updated_at', '>=', now()->subMinutes(60))
             ->pluck('id')
@@ -28,6 +35,7 @@ new class extends Component
     {
         if (! in_array($orderId, $this->dismissedCancelledIds, true)) {
             $this->dismissedCancelledIds[] = $orderId;
+            Cache::put($this->dismissedCacheKey(), $this->dismissedCancelledIds, now()->addHours(12));
         }
     }
 
@@ -169,6 +177,7 @@ new class extends Component
 <div wire:poll.5s
      x-data="{
         soundOn: true,
+        audioUnlocked: false,
         menuOpen: false,
         confirmLogout: false,
         audioCtx: null,
@@ -193,10 +202,41 @@ new class extends Component
         },
         unlockAudio() {
             this.keepScreenAwake();
+            if (this.audioUnlocked) return;
+            this.audioUnlocked = true;
+
+            try {
+                if (!this.audioCtx) {
+                    const Ctx = window.AudioContext || window.webkitAudioContext;
+                    if (Ctx) this.audioCtx = new Ctx();
+                }
+                if (this.audioCtx && this.audioCtx.state === 'suspended') {
+                    this.audioCtx.resume().catch(() => {});
+                }
+            } catch (e) {}
+
             ['barista-sound-quick', 'barista-sound-meeting', 'barista-sound-cancelled-quick', 'barista-sound-cancelled-meeting'].forEach(id => {
                 const el = document.getElementById(id);
                 if (el) {
-                    el.load();
+                    try {
+                        el.muted = true;
+                        const p = el.play();
+                        if (p !== undefined) {
+                            p.then(() => {
+                                el.pause();
+                                el.currentTime = 0;
+                                el.muted = false;
+                            }).catch(() => {
+                                el.muted = false;
+                            });
+                        } else {
+                            el.pause();
+                            el.currentTime = 0;
+                            el.muted = false;
+                        }
+                    } catch (e) {
+                        el.muted = false;
+                    }
                 }
             });
         },
@@ -250,7 +290,6 @@ new class extends Component
         },
         playOrderAlert(type = 'quick') {
             if (!this.soundOn) return;
-            this.unlockAudio();
 
             const isCancel = (type === 'cancelled_quick' || type === 'cancelled_meeting');
             const fallback = () => isCancel ? this.playCancelAlertBeep() : this.playDingDong();
@@ -265,6 +304,8 @@ new class extends Component
                 const audioId = audioMap[type] || 'barista-sound-quick';
                 const el = document.getElementById(audioId);
                 if (el) {
+                    el.muted = false;
+                    el.pause();
                     el.currentTime = 0;
                     const p = el.play();
                     if (p !== undefined) {
