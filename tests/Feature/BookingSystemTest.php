@@ -1992,4 +1992,106 @@ class BookingSystemTest extends TestCase
         $this->assertNull($fresh->telegram_username);
         $this->assertNull($fresh->remember_token);
     }
+
+    public function test_deleting_or_unchecking_drink_preserves_past_order_history(): void
+    {
+        $admin = User::where('role', 'admin')->first();
+        $employee = User::where('email', 'employee@company.com')->first();
+        $hq = Branch::where('is_hq', true)->first();
+        $room = Room::where('branch_id', $hq->id)->first();
+        $drink = DrinkItem::where('branch_id', $hq->id)->where('name', 'Ice Milk Coffee')->first();
+
+        Livewire::actingAs($employee)
+            ->test('mini-app.booking-app')
+            ->call('selectDrink', $drink->id)
+            ->set('drinkQuantity', 3)
+            ->call('addToCart')
+            ->call('submitDrinkOrder')
+            ->assertSet('flashType', 'success');
+
+        $order = DrinkOrder::latest('id')->first();
+
+        // Delete the drink as Admin
+        Livewire::actingAs($admin)
+            ->test('admin.approval-portal')
+            ->call('deleteDrink', $drink->id);
+
+        $this->assertDatabaseMissing('drink_items', ['id' => $drink->id]);
+        $this->assertDatabaseHas('drink_order_items', [
+            'drink_order_id' => $order->id,
+            'drink_item_id' => null,
+            'drink_name_snapshot' => 'Ice Milk Coffee',
+            'quantity' => 3,
+        ]);
+
+        // Reports still render the drink name and total cups cleanly
+        Livewire::actingAs($admin)
+            ->test('admin.approval-portal')
+            ->assertViewHas('totalCups', 3)
+            ->assertSee('Milk Coffee')
+            ->set('showOptionsInTable', true)
+            ->assertSee('Ice Milk Coffee');
+    }
+
+    public function test_staff_create_and_edit_prevent_case_insensitive_duplicate_and_email_collision(): void
+    {
+        $admin = User::where('role', 'admin')->first();
+        $hq = Branch::where('is_hq', true)->first();
+        $staff = User::where('employee_id', 'HQ-001')->first();
+
+        // Lowercase duplicate of existing BTK-001 triggers validation error (no 500)
+        Livewire::actingAs($admin)
+            ->test('admin.approval-portal')
+            ->set('newName', 'Duplicate Staff')
+            ->set('newEmployeeId', 'btk-001')
+            ->set('newPassword', 'secret123')
+            ->set('newPassword_confirmation', 'secret123')
+            ->set('newBranchId', $hq->id)
+            ->call('createStaffAccount')
+            ->assertHasErrors(['newEmployeeId']);
+
+        // Similar slug without hyphen (BTK001) generates a unique @cbvh.internal email cleanly
+        Livewire::actingAs($admin)
+            ->test('admin.approval-portal')
+            ->set('newName', 'Similar Slug Staff')
+            ->set('newEmployeeId', 'BTK001')
+            ->set('newPassword', 'secret123')
+            ->set('newPassword_confirmation', 'secret123')
+            ->set('newBranchId', $hq->id)
+            ->call('createStaffAccount')
+            ->assertHasNoErrors();
+
+        $this->assertDatabaseHas('users', ['employee_id' => 'BTK001']);
+
+        // Editing HQ-001 to lowercase 'btk-001' also fails cleanly with validation error (no 500)
+        Livewire::actingAs($admin)
+            ->test('admin.approval-portal')
+            ->call('openEditStaffModal', $staff->id)
+            ->set('editingStaffEmployeeId', 'btk-001')
+            ->call('saveEditedStaff')
+            ->assertHasErrors(['editingStaffEmployeeId']);
+    }
+
+    public function test_mini_app_rejects_submit_if_cart_drink_was_disabled_or_deleted(): void
+    {
+        $admin = User::where('role', 'admin')->first();
+        $employee = User::where('email', 'employee@company.com')->first();
+        $hq = Branch::where('is_hq', true)->first();
+        $drink = DrinkItem::where('branch_id', $hq->id)->first();
+
+        $component = Livewire::actingAs($employee)
+            ->test('mini-app.booking-app')
+            ->call('selectDrink', $drink->id)
+            ->call('addToCart');
+
+        // Admin disables the drink while it sits in employee's tray
+        Livewire::actingAs($admin)
+            ->test('admin.approval-portal')
+            ->call('toggleDrinkAvailability', $drink->id);
+
+        $component->call('submitDrinkOrder')
+            ->assertSet('flashType', 'error');
+
+        $this->assertDatabaseCount('drink_orders', 0);
+    }
 }

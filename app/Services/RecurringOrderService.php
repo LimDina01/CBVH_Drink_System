@@ -9,6 +9,7 @@ use App\Models\RecurringScheduleDate;
 use App\Models\Room;
 use App\Models\User;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -23,101 +24,115 @@ class RecurringOrderService
         $targetDate = $targetDate ? $targetDate->copy() : today();
         $dateStr = $targetDate->toDateString();
 
-        $dueDates = RecurringScheduleDate::whereDate('delivery_date', $dateStr)
-            ->where('status', 'scheduled')
-            ->whereNull('generated_order_id')
-            ->with(['schedule.items.drinkItem', 'schedule.branch', 'schedule.room'])
-            ->get();
+        return Cache::lock("recurring_dispatch_lock_{$dateStr}", 15)->get(function () use ($dateStr) {
+            $dueDates = RecurringScheduleDate::whereDate('delivery_date', $dateStr)
+                ->where('status', 'scheduled')
+                ->whereNull('generated_order_id')
+                ->with(['schedule.items.drinkItem', 'schedule.branch', 'schedule.room'])
+                ->get();
 
-        $generatedOrders = [];
+            $generatedOrders = [];
 
-        foreach ($dueDates as $scheduleDate) {
-            $schedule = $scheduleDate->schedule;
-            if (!$schedule || !$schedule->is_active || $schedule->items->isEmpty()) {
-                continue;
-            }
-
-            try {
-                $order = DB::transaction(function () use ($schedule, $scheduleDate, $dateStr) {
-                    $admin = $schedule->creator ?? User::where('role', 'admin')->first() ?? User::first();
-                    $deliveryTime = Carbon::parse($dateStr . ' ' . ($schedule->delivery_time ?: '08:30'));
-                    $totalCups = (int) $schedule->items->sum('quantity');
-
-                    // Fallback room if room_id is empty: ensure it belongs to this branch
-                    $roomId = $schedule->room_id
-                        ?: Room::where('branch_id', $schedule->branch_id)->value('id');
-
-                    if (!$roomId) {
-                        $defaultRoom = Room::firstOrCreate(
-                            ['branch_id' => $schedule->branch_id, 'name' => 'Main Office Area'],
-                            ['floor' => 'Ground Floor', 'capacity' => 20, 'is_active' => true]
-                        );
-                        $roomId = $defaultRoom->id;
-                    }
-
-                    $locNote = $schedule->location_detail ? "📍 {$schedule->location_detail}" : "";
-                    $notes = trim($locNote . ($schedule->notes ? ($locNote ? " — " : "") . $schedule->notes : ""));
-                    if (empty($notes)) {
-                        $notes = "🗓️ " . ($schedule->title ?: 'Schedule Order');
-                    }
-
-                    $order = DrinkOrder::create([
-                        'user_id' => $admin ? $admin->id : 1,
-                        'branch_id' => $schedule->branch_id,
-                        'room_id' => $roomId,
-                        'order_type' => 'recurring',
-                        'delivery_time' => $deliveryTime,
-                        'people_count' => max(1, $totalCups),
-                        'notes' => $notes,
-                        'status' => 'approved', // Pre-approved by standing schedule
-                        'approved_by' => $admin ? $admin->id : null,
-                        'approved_at' => now(),
-                    ]);
-
-                    foreach ($schedule->items as $item) {
-                        $options = [];
-                        if ($item->sugar_level) {
-                            $options['sugar'] = $item->sugar_level;
-                        }
-                        if ($item->ice_level) {
-                            $options['ice'] = $item->ice_level;
-                        }
-                        if (!empty($item->custom_layer_selections)) {
-                            $options['custom_layers'] = $item->custom_layer_selections;
-                        }
-
-                        DrinkOrderItem::create([
-                            'drink_order_id' => $order->id,
-                            'drink_item_id' => $item->drink_item_id,
-                            'quantity' => $item->quantity,
-                            'selected_options' => !empty($options) ? $options : null,
-                            'instructions' => $item->instructions,
-                        ]);
-                    }
-
-                    $scheduleDate->update([
-                        'status' => 'generated',
-                        'generated_order_id' => $order->id,
-                    ]);
-
-                    return $order;
-                });
-
-                if ($order) {
-                    try {
-                        app(TelegramService::class)->notifyBaristaForDrinkOrder($order);
-                    } catch (\Throwable $e) {
-                        Log::error("Failed to notify barista on Telegram for recurring order #{$order->id}: " . $e->getMessage());
-                    }
-
-                    $generatedOrders[] = $order;
+            foreach ($dueDates as $scheduleDate) {
+                $schedule = $scheduleDate->schedule;
+                if (! $schedule || ! $schedule->is_active || $schedule->items->isEmpty()) {
+                    continue;
                 }
-            } catch (\Throwable $e) {
-                Log::error("Error generating recurring order for schedule #{$schedule->id} on {$dateStr}: " . $e->getMessage());
-            }
-        }
 
-        return $generatedOrders;
+                try {
+                    $order = DB::transaction(function () use ($schedule, $scheduleDate, $dateStr) {
+                        $lockedDate = RecurringScheduleDate::whereKey($scheduleDate->id)
+                            ->where('status', 'scheduled')
+                            ->whereNull('generated_order_id')
+                            ->lockForUpdate()
+                            ->first();
+
+                        if (! $lockedDate) {
+                            return null;
+                        }
+
+                        $admin = $schedule->creator ?? User::where('role', 'admin')->first() ?? User::first();
+                        $deliveryTime = Carbon::parse($dateStr.' '.($schedule->delivery_time ?: '08:30'));
+                        $totalCups = (int) $schedule->items->sum('quantity');
+
+                        // Fallback room if room_id is empty: ensure it belongs to this branch
+                        $roomId = $schedule->room_id
+                            ?: Room::where('branch_id', $schedule->branch_id)->value('id');
+
+                        if (! $roomId) {
+                            $defaultRoom = Room::firstOrCreate(
+                                ['branch_id' => $schedule->branch_id, 'name' => 'Main Office Area'],
+                                ['floor' => 'Ground Floor', 'capacity' => 20, 'is_active' => true]
+                            );
+                            $roomId = $defaultRoom->id;
+                        }
+
+                        $locNote = $schedule->location_detail ? "📍 {$schedule->location_detail}" : '';
+                        $notes = trim($locNote.($schedule->notes ? ($locNote ? ' — ' : '').$schedule->notes : ''));
+                        if (empty($notes)) {
+                            $notes = '🗓️ '.($schedule->title ?: 'Schedule Order');
+                        }
+
+                        $order = DrinkOrder::create([
+                            'user_id' => $admin ? $admin->id : 1,
+                            'branch_id' => $schedule->branch_id,
+                            'room_id' => $roomId,
+                            'order_type' => 'recurring',
+                            'delivery_time' => $deliveryTime,
+                            'people_count' => max(1, $totalCups),
+                            'notes' => $notes,
+                            'status' => 'approved', // Pre-approved by standing schedule
+                            'approved_by' => $admin ? $admin->id : null,
+                            'approved_at' => now(),
+                        ]);
+
+                        foreach ($schedule->items as $item) {
+                            $options = [];
+                            if ($item->sugar_level) {
+                                $options['sugar'] = $item->sugar_level;
+                            }
+                            if ($item->ice_level) {
+                                $options['ice'] = $item->ice_level;
+                            }
+                            if (! empty($item->custom_layer_selections)) {
+                                $options['custom_layers'] = $item->custom_layer_selections;
+                            }
+
+                            DrinkOrderItem::create([
+                                'drink_order_id' => $order->id,
+                                'drink_item_id' => $item->drink_item_id,
+                                'drink_name_snapshot' => $item->drinkItem?->name,
+                                'drink_category_snapshot' => $item->drinkItem?->category,
+                                'quantity' => $item->quantity,
+                                'selected_options' => ! empty($options) ? $options : null,
+                                'instructions' => $item->instructions,
+                            ]);
+                        }
+
+                        $lockedDate->update([
+                            'status' => 'generated',
+                            'generated_order_id' => $order->id,
+                        ]);
+
+                        return $order;
+                    });
+
+                    if ($order) {
+                        try {
+                            app(TelegramService::class)->notifyBaristaForDrinkOrder($order);
+                        } catch (\Throwable $e) {
+                            Log::error("Failed to notify barista on Telegram for recurring order #{$order->id}: ".$e->getMessage());
+                        }
+
+                        $generatedOrders[] = $order;
+                    }
+                } catch (\Throwable $e) {
+                    Log::error("Error generating recurring order for schedule #{$schedule->id} on {$dateStr}: ".$e->getMessage());
+                }
+            }
+
+            return $generatedOrders;
+        }) ?? [];
     }
 
     /**
@@ -142,7 +157,7 @@ class RecurringOrderService
                     ->whereDate('delivery_date', $dateStr)
                     ->exists();
 
-                if (!$exists) {
+                if (! $exists) {
                     RecurringScheduleDate::create([
                         'recurring_schedule_id' => $schedule->id,
                         'delivery_date' => $dateStr,
@@ -167,12 +182,13 @@ class RecurringOrderService
             ->whereMonth('delivery_date', $prevMonth->month)
             ->whereIn('status', ['scheduled', 'generated'])
             ->pluck('delivery_date')
-            ->map(fn($d) => Carbon::parse($d)->day)
+            ->map(fn ($d) => Carbon::parse($d)->day)
             ->toArray();
 
         if (empty($prevDates)) {
             // Default to Mon-Fri if previous month had no schedule
             $this->prefillMonth($schedule, $targetYear, $targetMonth, false);
+
             return 0;
         }
 
@@ -189,7 +205,7 @@ class RecurringOrderService
                         ->whereDate('delivery_date', $tDateStr)
                         ->exists();
 
-                    if (!$exists) {
+                    if (! $exists) {
                         RecurringScheduleDate::create([
                             'recurring_schedule_id' => $schedule->id,
                             'delivery_date' => $tDateStr,
@@ -218,6 +234,7 @@ class RecurringOrderService
                 return 'generated'; // Cannot toggle off already generated order
             }
             $existing->delete();
+
             return 'removed';
         }
 

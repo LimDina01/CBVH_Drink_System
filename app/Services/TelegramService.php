@@ -312,62 +312,6 @@ class TelegramService
     }
 
     /**
-     * Notification: Drink Order Created -> Notify Approver(s)
-     */
-    public function notifyApproverForDrinkOrder($order): void
-    {
-        try {
-            $order->loadMissing(['user', 'room', 'branch', 'items.drinkItem']);
-
-            $approvers = $order->branch?->users()
-                ?->whereIn('role', ['hod', 'admin'])
-                ->whereNotNull('telegram_chat_id')
-                ->get() ?? collect();
-
-            if ($approvers->isEmpty()) {
-                $approvers = User::where('role', 'admin')
-                    ->whereNotNull('telegram_chat_id')
-                    ->get();
-            }
-
-            if ($approvers->isEmpty()) {
-                return;
-            }
-
-            $requesterName = $order->user?->name ?? 'Staff';
-            $roomName = $order->room?->name ?? ($order->location_detail ?: 'Main Area');
-
-            $text = "☕ <b>New Drink Request #{$order->id}</b>\n\n"
-                  ."<b>Requester:</b> {$requesterName}\n"
-                  ."<b>Room:</b> {$roomName}\n"
-                  ."<b>Items:</b>\n";
-
-            foreach ($order->items as $item) {
-                $drinkName = $item->drinkItem?->name ?? 'Drink';
-                $options = $this->formatDrinkOptions($item->selected_options);
-                $text .= "• {$item->quantity}x {$drinkName}{$options}\n";
-            }
-
-            if ($order->notes) {
-                $text .= "\n<b>Notes:</b> {$order->notes}\n";
-            }
-
-            $keyboard = [
-                [
-                    ['text' => '✅ Approve', 'callback_data' => "drink_approve_{$order->id}"],
-                    ['text' => '❌ Reject', 'callback_data' => "drink_reject_{$order->id}"],
-                ],
-            ];
-
-            foreach ($approvers as $approver) {
-                $this->sendMessage($approver->telegram_chat_id, $text, $keyboard);
-            }
-        } catch (\Throwable $e) {
-            Log::error("Failed to notify approvers for order #{$order->id}: ".$e->getMessage());
-        }
-    }
-
-    /**
      * Notification: New Drink Order -> Notify Baristas & Kitchen directly (no approval needed).
      */
     public function notifyBaristaForDrinkOrder($order): void
@@ -409,7 +353,7 @@ class TelegramService
             $text .= "\n<b>Items:</b>\n";
             foreach ($order->items as $item) {
                 $opts = $this->formatDrinkOptions($item->selected_options);
-                $drinkName = $item->drinkItem?->name ?? 'Drink';
+                $drinkName = $item->drinkItem?->name ?? $item->drink_name_snapshot ?? 'Drink';
                 $text .= "• {$item->quantity}x <b>{$drinkName}</b>{$opts}\n";
             }
 

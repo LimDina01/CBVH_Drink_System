@@ -13,6 +13,8 @@ class DrinkOrderItem extends Model
     protected $fillable = [
         'drink_order_id',
         'drink_item_id',
+        'drink_name_snapshot',
+        'drink_category_snapshot',
         'quantity',
         'selected_options',
         'instructions',

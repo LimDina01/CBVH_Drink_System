@@ -169,6 +169,7 @@ new class extends Component
 
         $firstRoom = Room::where('branch_id', $this->selectedBranchId)->where('is_active', true)->first();
         $this->selectedRoomId = $firstRoom ? $firstRoom->id : null;
+        $this->selectedDrinkId = null;
         $this->drinkCart = [];
     }
 
@@ -383,7 +384,31 @@ new class extends Component
 
         $effectiveUserId = Auth::id() ?? $this->currentUserId;
         $totalCups = (int) collect($this->drinkCart)->sum('quantity');
-        $branch = Branch::find($this->selectedBranchId);
+        $branch = Branch::where('id', $this->selectedBranchId)->where('is_active', true)->first();
+        if (!$branch) {
+            $this->flashMessage = 'Selected branch is currently inactive.';
+            $this->flashType = 'error';
+            return;
+        }
+
+        // Re-validate every drink in tray (might have gone out-of-stock or been deleted while sitting in cart)
+        $drinkIds = collect($this->drinkCart)->pluck('drink_id')->filter()->unique()->all();
+        $validDrinks = DrinkItem::whereIn('id', $drinkIds)
+            ->where('branch_id', $this->selectedBranchId)
+            ->where('is_available', true)
+            ->get()
+            ->keyBy('id');
+
+        foreach ($this->drinkCart as $item) {
+            $drinkId = $item['drink_id'] ?? null;
+            $qty = (int) ($item['quantity'] ?? 0);
+            if (!$drinkId || $qty < 1 || !$validDrinks->has($drinkId)) {
+                $itemName = $item['name'] ?? 'Selected drink';
+                $this->flashMessage = "{$itemName} is no longer available for this branch. Please remove it from your tray.";
+                $this->flashType = 'error';
+                return;
+            }
+        }
 
         $isExtend = !empty($this->extendingOrderId);
         $finalOrderType = $isExtend ? 'extend' : $this->orderType;
@@ -492,43 +517,60 @@ new class extends Component
             $attachmentPath = $this->attachment->store('attachments', 'public');
         }
 
-        $order = DrinkOrder::create([
-            'user_id' => $effectiveUserId,
-            'branch_id' => $this->selectedBranchId,
-            'room_id' => $this->selectedRoomId,
-            'order_type' => $finalOrderType,
-            'parent_order_id' => $isExtend ? $this->extendingOrderId : null,
-            'extend_reason' => $isExtend ? $this->extendReason : null,
-            'delivery_time' => $deliveryTime,
-            'estimated_wait_minutes' => $waitMinutes,
-            'people_count' => $totalCups,
-            'notes' => $this->drinkNotes,
-            'attachment_path' => $attachmentPath,
-            'attachment_name' => $attachmentName,
-            'status' => 'approved',
-            'approved_at' => now(),
-        ]);
-
-        foreach ($this->drinkCart as $item) {
-            DrinkOrderItem::create([
-                'drink_order_id' => $order->id,
-                'drink_item_id' => $item['drink_id'],
-                'quantity' => $item['quantity'],
-                'selected_options' => $item['options'],
+        $order = \Illuminate\Support\Facades\DB::transaction(function () use (
+            $effectiveUserId,
+            $finalOrderType,
+            $isExtend,
+            $deliveryTime,
+            $waitMinutes,
+            $totalCups,
+            $attachmentPath,
+            $attachmentName,
+            $validDrinks
+        ) {
+            $order = DrinkOrder::create([
+                'user_id' => $effectiveUserId,
+                'branch_id' => $this->selectedBranchId,
+                'room_id' => $this->selectedRoomId,
+                'order_type' => $finalOrderType,
+                'parent_order_id' => $isExtend ? $this->extendingOrderId : null,
+                'extend_reason' => $isExtend ? $this->extendReason : null,
+                'delivery_time' => $deliveryTime,
+                'estimated_wait_minutes' => $waitMinutes,
+                'people_count' => $totalCups,
+                'notes' => $this->drinkNotes,
+                'attachment_path' => $attachmentPath,
+                'attachment_name' => $attachmentName,
+                'status' => 'approved',
+                'approved_at' => now(),
             ]);
-        }
 
-        // Auto-complete and close the parent order so it leaves in_delivery
-        if ($isExtend && $this->extendingOrderId) {
-            $parent = DrinkOrder::find($this->extendingOrderId);
-            if ($parent && $parent->status === 'in_delivery') {
-                $parent->update([
-                    'status' => 'completed',
-                    'completed_at' => now(),
-                    'auto_completed' => false,
+            foreach ($this->drinkCart as $item) {
+                $drinkModel = $validDrinks->get($item['drink_id']);
+                DrinkOrderItem::create([
+                    'drink_order_id' => $order->id,
+                    'drink_item_id' => $item['drink_id'],
+                    'drink_name_snapshot' => $drinkModel?->name ?? ($item['name'] ?? null),
+                    'drink_category_snapshot' => $drinkModel?->category,
+                    'quantity' => (int) $item['quantity'],
+                    'selected_options' => $item['options'],
                 ]);
             }
-        }
+
+            // Auto-complete and close the parent order so it leaves in_delivery
+            if ($isExtend && $this->extendingOrderId) {
+                $parent = DrinkOrder::find($this->extendingOrderId);
+                if ($parent && $parent->status === 'in_delivery') {
+                    $parent->update([
+                        'status' => 'completed',
+                        'completed_at' => now(),
+                        'auto_completed' => false,
+                    ]);
+                }
+            }
+
+            return $order;
+        });
 
         app(TelegramService::class)->notifyBaristaForDrinkOrder($order);
 
@@ -1029,7 +1071,7 @@ new class extends Component
 
                             <div class="text-xs text-[#7C6A60] dark:text-[#BBA79D] space-y-0.5">
                                 @foreach($order->items as $it)
-                                    <div>• {{ $it->quantity }}x <strong class="text-[#2C211C] dark:text-[#F5EDE7]">{{ \App\Support\CbvhLocale::drink($it->drinkItem?->name) }}</strong></div>
+                                    <div>• {{ $it->quantity }}x <strong class="text-[#2C211C] dark:text-[#F5EDE7]">{{ \App\Support\CbvhLocale::drink($it->drinkItem?->name ?? $it->drink_name_snapshot) }}</strong></div>
                                 @endforeach
                             </div>
 

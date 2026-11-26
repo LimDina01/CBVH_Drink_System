@@ -119,7 +119,7 @@
                         {{ $it->quantity }}×
                     </span>
                     <span class="font-black text-lg text-[#2C211C] dark:text-[#F5EDE7] leading-snug">
-                        {{ \App\Support\CbvhLocale::drink($it->drinkItem?->name) }}
+                        {{ \App\Support\CbvhLocale::drink($it->drinkItem?->name ?? $it->drink_name_snapshot) }}
                     </span>
                 </div>
 

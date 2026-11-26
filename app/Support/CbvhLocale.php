@@ -2,6 +2,7 @@
 
 namespace App\Support;
 
+use App\Models\DrinkItem;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Facades\Lang;
 
@@ -62,7 +63,7 @@ class CbvhLocale
         static $drinkCache = null;
         if ($drinkCache === null) {
             try {
-                $drinkCache = \App\Models\DrinkItem::whereNotNull('name_km')->pluck('name_km', 'name')->toArray();
+                $drinkCache = DrinkItem::whereNotNull('name_km')->pluck('name_km', 'name')->toArray();
             } catch (\Throwable $e) {
                 $drinkCache = [];
             }
@@ -119,6 +120,28 @@ class CbvhLocale
         return self::map('options', $value);
     }
 
+    /**
+     * Format selected drink options (handles both nested layer arrays and flat key => value strings).
+     */
+    public static function formatSelectedOptions(?array $options): string
+    {
+        if (empty($options)) {
+            return '';
+        }
+
+        $isKm = app()->getLocale() === 'km';
+
+        return collect($options)->map(function ($val) use ($isKm) {
+            if (is_array($val)) {
+                return $isKm
+                    ? ($val['km'] ?? $val['en'] ?? '')
+                    : ($val['en'] ?? $val['km'] ?? '');
+            }
+
+            return self::option(is_scalar($val) ? (string) $val : null);
+        })->filter()->implode(', ');
+    }
+
     public static function optionKey(string $key): string
     {
         return match ($key) {
@@ -156,7 +179,7 @@ class CbvhLocale
         }
 
         if (preg_match('/^Floor\s+(\d+)$/i', trim($floor), $m)) {
-            return 'ជាន់ទី ' . $m[1];
+            return 'ជាន់ទី '.$m[1];
         }
 
         return $floor;
@@ -168,7 +191,7 @@ class CbvhLocale
             return $dt->format('h:i A');
         }
 
-        return $dt->format('h:i') . ' ' . self::khmerDayPeriod($dt);
+        return $dt->format('h:i').' '.self::khmerDayPeriod($dt);
     }
 
     public static function formatDate(CarbonInterface $dt): string
@@ -179,7 +202,7 @@ class CbvhLocale
 
         $month = self::KHMER_MONTHS[$dt->month] ?? $dt->format('M');
 
-        return $dt->format('d') . '/' . $month . '/' . $dt->year;
+        return $dt->format('d').'/'.$month.'/'.$dt->year;
     }
 
     public static function formatDateTime(CarbonInterface $dt): string
@@ -188,7 +211,7 @@ class CbvhLocale
             return $dt->format('d/M/Y, h:i A');
         }
 
-        return self::formatDate($dt) . ' · ' . self::formatTime($dt);
+        return self::formatDate($dt).' · '.self::formatTime($dt);
     }
 
     private static function khmerDayPeriod(CarbonInterface $dt): string
@@ -207,4 +230,3 @@ class CbvhLocale
         return 'ល្ងាច';
     }
 }
-

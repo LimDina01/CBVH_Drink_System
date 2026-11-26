@@ -99,56 +99,8 @@ class TelegramWebhookController extends Controller
             return;
         }
 
-        // 1. Drink Approval by HOD / Admin
-        if (str_starts_with($data, 'drink_approve_')) {
-            if (! $actor->isHod()) {
-                $this->telegram->sendMessage($chatId, '⛔ You do not have permission to approve orders.');
-
-                return;
-            }
-
-            $orderId = str_replace('drink_approve_', '', $data);
-            $order = DrinkOrder::find($orderId);
-            if ($order && $order->status === 'pending_approval') {
-                $order->update([
-                    'status' => 'approved',
-                    'approved_by' => $actor->id,
-                    'approved_at' => now(),
-                ]);
-
-                $this->telegram->sendMessage($chatId, "✅ <b>Drink Request #{$orderId} APPROVED</b>. The ticket has been forwarded to the Barista / Kitchen.");
-
-                if ($order->user && $order->user->telegram_chat_id) {
-                    $this->telegram->sendMessage($order->user->telegram_chat_id, "🎉 Good news! Your drink request #{$orderId} was <b>APPROVED</b> and sent to the Barista.");
-                }
-
-                $this->telegram->notifyBaristaForDrinkOrder($order);
-            }
-        } elseif (str_starts_with($data, 'drink_reject_')) {
-            if (! $actor->isHod()) {
-                $this->telegram->sendMessage($chatId, '⛔ You do not have permission to reject orders.');
-
-                return;
-            }
-
-            $orderId = str_replace('drink_reject_', '', $data);
-            $order = DrinkOrder::find($orderId);
-            if ($order && $order->status === 'pending_approval') {
-                $order->update([
-                    'status' => 'rejected_by_approver',
-                    'approver_rejection_reason' => "Rejected by {$actor->name}",
-                ]);
-
-                $this->telegram->sendMessage($chatId, "❌ <b>Drink Request #{$orderId} REJECTED</b>.");
-
-                if ($order->user && $order->user->telegram_chat_id) {
-                    $this->telegram->sendMessage($order->user->telegram_chat_id, "⚠️ Notice: Your drink request #{$orderId} was <b>rejected</b> by the approver.");
-                }
-            }
-        }
-
-        // 2. Barista Accept / Ready
-        elseif (str_starts_with($data, 'barista_accept_')) {
+        // Barista Accept / Ready
+        if (str_starts_with($data, 'barista_accept_')) {
             if (! $actor->isBarista()) {
                 $this->telegram->sendMessage($chatId, '⛔ Only Barista or Admin staff can accept kitchen orders.');
 

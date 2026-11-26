@@ -2,12 +2,11 @@
 
 namespace App\Models;
 
-use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Illuminate\Foundation\Auth\User as Authenticatable;
-use Illuminate\Notifications\Notifiable;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Foundation\Auth\User as Authenticatable;
+use Illuminate\Notifications\Notifiable;
 
 class User extends Authenticatable
 {
@@ -21,7 +20,7 @@ class User extends Authenticatable
         'telegram_chat_id',
         'telegram_username',
         'phone',
-        'role', // 'employee', 'hod', 'barista', 'admin'
+        'role', // 'employee', 'barista', 'admin'
         'branch_id',
     ];
 
@@ -52,11 +51,6 @@ class User extends Authenticatable
     public function isAdmin(): bool
     {
         return $this->role === 'admin';
-    }
-
-    public function isHod(): bool
-    {
-        return in_array($this->role, ['hod', 'admin']);
     }
 
     public function isBarista(): bool

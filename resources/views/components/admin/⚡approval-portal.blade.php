@@ -152,11 +152,29 @@ new class extends Component
         }
     }
 
+    protected function buildUniqueInternalEmail(string $cleanEmpId, ?int $ignoreUserId = null): string
+    {
+        $slug = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', $cleanEmpId)) ?: 'staff';
+        $candidate = "{$slug}@cbvh.internal";
+        $suffix = 1;
+
+        while (User::where('email', $candidate)
+            ->when($ignoreUserId, fn($q) => $q->where('id', '!=', $ignoreUserId))
+            ->exists()) {
+            $suffix++;
+            $candidate = "{$slug}{$suffix}@cbvh.internal";
+        }
+
+        return $candidate;
+    }
+
     public function createStaffAccount(): void
     {
+        $this->newEmployeeId = strtoupper(trim($this->newEmployeeId));
+
         $this->validate([
             'newName' => 'required|min:2',
-            'newEmployeeId' => 'required|min:2|unique:users,employee_id',
+            'newEmployeeId' => 'required|min:2',
             'newPassword' => 'required|min:4|same:newPassword_confirmation',
             'newPassword_confirmation' => 'required',
             'newRole' => 'required|in:employee,barista,admin',
@@ -166,8 +184,13 @@ new class extends Component
             'newPassword_confirmation.required' => 'Please confirm the password.',
         ]);
 
-        $cleanEmpId = strtoupper(trim($this->newEmployeeId));
-        $generatedEmail = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', $cleanEmpId)) . '@cbvh.internal';
+        $cleanEmpId = $this->newEmployeeId;
+        if (User::whereRaw('LOWER(employee_id) = ?', [strtolower($cleanEmpId)])->exists()) {
+            $this->addError('newEmployeeId', 'This Employee ID is already taken.');
+            return;
+        }
+
+        $generatedEmail = $this->buildUniqueInternalEmail($cleanEmpId);
 
         User::create([
             'name' => trim($this->newName),
@@ -269,12 +292,21 @@ new class extends Component
             return;
         }
 
+        $this->editingStaffEmployeeId = strtoupper(trim($this->editingStaffEmployeeId));
+
         $this->validate([
             'editingStaffName' => 'required|min:2|max:100',
-            'editingStaffEmployeeId' => 'required|min:2|max:50|unique:users,employee_id,' . $this->editingStaffId,
+            'editingStaffEmployeeId' => 'required|min:2|max:50',
         ]);
 
-        $cleanEmpId = strtoupper(trim($this->editingStaffEmployeeId));
+        $cleanEmpId = $this->editingStaffEmployeeId;
+        if (User::whereRaw('LOWER(employee_id) = ?', [strtolower($cleanEmpId)])
+            ->where('id', '!=', $this->editingStaffId)
+            ->exists()) {
+            $this->addError('editingStaffEmployeeId', 'This Employee ID is already taken.');
+            return;
+        }
+
         $user = User::find($this->editingStaffId);
         if (!$user) {
             $this->showEditStaffModal = false;
@@ -282,10 +314,15 @@ new class extends Component
             return;
         }
 
-        $user->update([
+        $updates = [
             'name' => trim($this->editingStaffName),
             'employee_id' => $cleanEmpId,
-        ]);
+        ];
+        if (str_ends_with((string) $user->email, '@cbvh.internal')) {
+            $updates['email'] = $this->buildUniqueInternalEmail($cleanEmpId, $user->id);
+        }
+
+        $user->update($updates);
 
         $this->flashMessage = "Staff details updated for {$cleanEmpId} ({$user->name}).";
         $this->flashType = 'success';
@@ -314,20 +351,6 @@ new class extends Component
                 'auto_completed' => false,
             ]);
             $this->flashMessage = "#{$orderId} — " . __('cbvh.status_completed');
-            $this->flashType = 'success';
-        }
-    }
-
-    public function sendLegacyToBarista($orderId)
-    {
-        $order = DrinkOrder::find($orderId);
-        if ($order && $order->status === 'pending_approval') {
-            $order->update([
-                'status' => 'approved',
-                'approved_at' => now(),
-            ]);
-            app(TelegramService::class)->notifyBaristaForDrinkOrder($order);
-            $this->flashMessage = "#{$orderId} forwarded to Barista.";
             $this->flashType = 'success';
         }
     }
@@ -645,7 +668,14 @@ new class extends Component
         $descKm = trim($this->drinkDescriptionKm) ?: null;
 
         if ($this->editingDrinkId) {
-            $drink = DrinkItem::findOrFail($this->editingDrinkId);
+            $drink = DrinkItem::find($this->editingDrinkId);
+            if (!$drink) {
+                $this->showDrinkModal = false;
+                $this->editingDrinkId = null;
+                $this->flashMessage = 'This drink no longer exists.';
+                $this->flashType = 'error';
+                return;
+            }
             $oldName = $drink->name;
             $targetBranchIds = array_map('intval', (array) $this->drinkTargetBranches);
 
@@ -705,10 +735,6 @@ new class extends Component
 
         $this->drinkImage = null;
         $this->existingImagePath = null;
-        $this->flashType = 'success';
-        $this->showDrinkModal = false;
-        $this->editingDrinkId = null;
-
         $this->flashType = 'success';
         $this->showDrinkModal = false;
         $this->editingDrinkId = null;
@@ -789,7 +815,7 @@ new class extends Component
             foreach ($orders as $order) {
                 // Group drinks by clean base name (e.g. Hot Latte + Iced Latte => Latte) without sugar/ice clutter
                 $drinksList = $order->items
-                    ->groupBy(fn($it) => \App\Support\CbvhLocale::toBaseDrinkName($it->drinkItem?->name))
+                    ->groupBy(fn($it) => \App\Support\CbvhLocale::toBaseDrinkName($it->drinkItem?->name ?? $it->drink_name_snapshot))
                     ->map(function ($group, $baseName) {
                         $qty = $group->sum('quantity');
                         return "{$qty}x {$baseName}";
@@ -842,8 +868,8 @@ new class extends Component
             $summary = [];
             foreach ($orders as $order) {
                 foreach ($order->items as $it) {
-                    $base = \App\Support\CbvhLocale::toBaseDrinkName($it->drinkItem?->name ?? 'Other');
-                    $category = $it->drinkItem?->category ?? 'drink';
+                    $base = \App\Support\CbvhLocale::toBaseDrinkName($it->drinkItem?->name ?? $it->drink_name_snapshot ?? 'Other');
+                    $category = $it->drinkItem?->category ?? $it->drink_category_snapshot ?? 'drink';
                     if (!isset($summary[$base])) {
                         $summary[$base] = [
                             'name' => $base,
@@ -1195,8 +1221,8 @@ new class extends Component
         $drinkTotals = [];
         foreach ($allFilteredOrders as $order) {
             foreach ($order->items as $it) {
-                $base = \App\Support\CbvhLocale::toBaseDrinkName($it->drinkItem?->name ?? 'Other');
-                $category = $it->drinkItem?->category ?? 'drink';
+                $base = \App\Support\CbvhLocale::toBaseDrinkName($it->drinkItem?->name ?? $it->drink_name_snapshot ?? 'Other');
+                $category = $it->drinkItem?->category ?? $it->drink_category_snapshot ?? 'drink';
                 if (!isset($drinkTotals[$base])) {
                     $drinkTotals[$base] = [
                         'name' => $base,
@@ -1740,15 +1766,15 @@ new class extends Component
                                     @if($showOptionsInTable)
                                         @foreach($order->items as $it)
                                             <div>
-                                                <strong>{{ $it->quantity }}×</strong> {{ \App\Support\CbvhLocale::drink($it->drinkItem?->name) }}
+                                                <strong>{{ $it->quantity }}×</strong> {{ \App\Support\CbvhLocale::drink($it->drinkItem?->name ?? $it->drink_name_snapshot) }}
                                                 @if(!empty($it->selected_options))
-                                                    <span class="text-[10px] text-[#7C6A60]">({{ collect($it->selected_options)->map(fn($v) => \App\Support\CbvhLocale::option($v))->implode(', ') }})</span>
+                                                    <span class="text-[10px] text-[#7C6A60]">({{ \App\Support\CbvhLocale::formatSelectedOptions($it->selected_options) }})</span>
                                                 @endif
                                             </div>
                                         @endforeach
                                     @else
                                         @php
-                                            $groupedDrinks = $order->items->groupBy(fn($it) => \App\Support\CbvhLocale::toBaseDrinkName($it->drinkItem?->name));
+                                            $groupedDrinks = $order->items->groupBy(fn($it) => \App\Support\CbvhLocale::toBaseDrinkName($it->drinkItem?->name ?? $it->drink_name_snapshot));
                                         @endphp
                                         @foreach($groupedDrinks as $bName => $gItems)
                                             <div class="font-bold text-xs text-[#2C211C] dark:text-[#F5EDE7]">
@@ -1783,11 +1809,7 @@ new class extends Component
                                     </span>
                                 </td>
                                 <td class="py-3.5 px-4 text-right whitespace-nowrap">
-                                    @if($order->status === 'pending_approval')
-                                        <button wire:click="sendLegacyToBarista({{ $order->id }})" class="px-2.5 py-1 bg-emerald-600 text-white rounded-lg text-[10px] font-bold cursor-pointer">
-                                            Barista
-                                        </button>
-                                    @elseif(in_array($order->status, ['approved', 'preparing', 'in_delivery']))
+                                    @if(in_array($order->status, ['approved', 'preparing', 'in_delivery']))
                                         @php
                                             $closeWarning = in_array($order->status, ['approved', 'preparing'])
                                                 ? "⚠️ Warning: Order #{$order->id} is currently " . strtoupper($order->status) . " by the barista. Are you sure you want to override and complete it?"
