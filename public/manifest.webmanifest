@@ -1,0 +1,17 @@
+{
+  "name": "CBVH Drink System",
+  "short_name": "CBVH Drinks",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#FAF6F3",
+  "theme_color": "#9E6B55",
+  "icons": [
+    {
+      "src": "/images/cbvh-mark.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
