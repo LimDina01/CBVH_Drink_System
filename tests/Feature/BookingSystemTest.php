@@ -2271,6 +2271,16 @@ class BookingSystemTest extends TestCase
             'status' => 'approved',
         ]);
 
+        $laterTodayQuickOrder = DrinkOrder::create([
+            'user_id' => $employee->id,
+            'branch_id' => $hq->id,
+            'room_id' => $room->id,
+            'order_type' => 'instant',
+            'delivery_time' => now()->addHours(2),
+            'status' => 'approved',
+        ]);
+        $laterTodayQuickOrder->items()->create(['drink_item_id' => $drink->id, 'drink_name_snapshot' => $drink->name, 'quantity' => 2]);
+
         $preparingMeeting = DrinkOrder::create([
             'user_id' => $employee->id,
             'branch_id' => $hq->id,
@@ -2284,12 +2294,15 @@ class BookingSystemTest extends TestCase
             ->test('mini-app.booking-app')
             ->call('cancelMeetingOrder', $meetingOrder->id)
             ->assertSet('flashType', 'success')
+            ->call('cancelMeetingOrder', $laterTodayQuickOrder->id)
+            ->assertSet('flashType', 'success')
             ->call('cancelMeetingOrder', $instantOrder->id)
             ->assertSet('flashType', 'error')
             ->call('cancelMeetingOrder', $preparingMeeting->id)
             ->assertSet('flashType', 'error');
 
         $this->assertEquals('cancelled', $meetingOrder->fresh()->status);
+        $this->assertEquals('cancelled', $laterTodayQuickOrder->fresh()->status);
         $this->assertEquals('approved', $instantOrder->fresh()->status);
         $this->assertEquals('preparing', $preparingMeeting->fresh()->status);
 
@@ -2298,6 +2311,15 @@ class BookingSystemTest extends TestCase
                 && ($request['chat_id'] ?? null) === '999888777'
                 && str_contains($request['text'] ?? '', "ORDER CANCELLED (#{$meetingOrder->id})");
         });
+
+        // Barista Kitchen Display shows the red web alert banner and dismisses it cleanly
+        Livewire::actingAs($barista)
+            ->test('barista.kitchen-display')
+            ->assertSee(__('cbvh.barista_cancelled_banner', ['id' => $meetingOrder->id]))
+            ->assertSee(__('cbvh.barista_cancelled_banner', ['id' => $laterTodayQuickOrder->id]))
+            ->call('dismissCancelledAlert', $meetingOrder->id)
+            ->assertDontSee(__('cbvh.barista_cancelled_banner', ['id' => $meetingOrder->id]))
+            ->assertSee(__('cbvh.barista_cancelled_banner', ['id' => $laterTodayQuickOrder->id]));
     }
 
     public function test_admin_can_cancel_active_order_and_cancelled_orders_are_excluded_from_cup_totals(): void

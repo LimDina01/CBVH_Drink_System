@@ -11,10 +11,24 @@ new class extends Component
     public $viewFilter = 'all'; // 'all', 'instant', 'meeting'
     public $flashMessage = null;
     public int $lastKnownOrderId = 0;
+    public array $dismissedCancelledIds = [];
+    public array $seenCancelledIds = [];
 
     public function mount()
     {
         $this->lastKnownOrderId = (int) (DrinkOrder::max('id') ?? 0);
+        $this->seenCancelledIds = DrinkOrder::where('status', 'cancelled')
+            ->where('updated_at', '>=', now()->subMinutes(60))
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+    }
+
+    public function dismissCancelledAlert(int $orderId): void
+    {
+        if (! in_array($orderId, $this->dismissedCancelledIds, true)) {
+            $this->dismissedCancelledIds[] = $orderId;
+        }
     }
 
     public function acceptOrder($orderId)
@@ -123,9 +137,25 @@ new class extends Component
             ->whereDate('completed_at', today())
             ->count();
 
+        $recentCancelledOrders = DrinkOrder::where('status', 'cancelled')
+            ->where('updated_at', '>=', now()->subMinutes(60))
+            ->when(! empty($this->dismissedCancelledIds), fn ($q) => $q->whereNotIn('id', $this->dismissedCancelledIds))
+            ->with(['branch', 'room', 'items.drinkItem'])
+            ->orderByDesc('updated_at')
+            ->get();
+
+        foreach ($recentCancelledOrders as $cOrder) {
+            if (! in_array((int) $cOrder->id, $this->seenCancelledIds, true)) {
+                $this->seenCancelledIds[] = (int) $cOrder->id;
+                $cancelType = ($cOrder->order_type === 'meeting') ? 'cancelled_meeting' : 'cancelled_quick';
+                $this->dispatch('cancelled-barista-order', orderType: $cancelType);
+            }
+        }
+
         return [
             'instantOrders' => $instantOrders,
             'meetingOrders' => $meetingOrders,
+            'recentCancelledOrders' => $recentCancelledOrders,
             'newCount' => $newCount,
             'preparingCount' => $orders->where('status', 'preparing')->count(),
             'deliveryCount' => $orders->where('status', 'in_delivery')->count(),
@@ -163,12 +193,36 @@ new class extends Component
         },
         unlockAudio() {
             this.keepScreenAwake();
-            ['barista-sound-quick', 'barista-sound-meeting'].forEach(id => {
+            ['barista-sound-quick', 'barista-sound-meeting', 'barista-sound-cancelled-quick', 'barista-sound-cancelled-meeting'].forEach(id => {
                 const el = document.getElementById(id);
                 if (el) {
                     el.load();
                 }
             });
+        },
+        playCancelAlertBeep() {
+            try {
+                if (!this.audioCtx) {
+                    const Ctx = window.AudioContext || window.webkitAudioContext;
+                    if (Ctx) this.audioCtx = new Ctx();
+                }
+                const ctx = this.audioCtx;
+                if (!ctx) return;
+                if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+                const now = ctx.currentTime;
+                [784, 523.25, 784].forEach((freq, idx) => {
+                    const osc = ctx.createOscillator();
+                    const gain = ctx.createGain();
+                    osc.type = 'triangle';
+                    osc.frequency.setValueAtTime(freq, now + idx * 0.18);
+                    gain.gain.setValueAtTime(0.28, now + idx * 0.18);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.18 + 0.35);
+                    osc.connect(gain);
+                    gain.connect(ctx.destination);
+                    osc.start(now + idx * 0.18);
+                    osc.stop(now + idx * 0.18 + 0.35);
+                });
+            } catch (e) {}
         },
         playDingDong() {
             try {
@@ -198,8 +252,17 @@ new class extends Component
             if (!this.soundOn) return;
             this.unlockAudio();
 
+            const isCancel = (type === 'cancelled_quick' || type === 'cancelled_meeting');
+            const fallback = () => isCancel ? this.playCancelAlertBeep() : this.playDingDong();
+
             try {
-                const audioId = (type === 'meeting') ? 'barista-sound-meeting' : 'barista-sound-quick';
+                const audioMap = {
+                    quick: 'barista-sound-quick',
+                    meeting: 'barista-sound-meeting',
+                    cancelled_quick: 'barista-sound-cancelled-quick',
+                    cancelled_meeting: 'barista-sound-cancelled-meeting',
+                };
+                const audioId = audioMap[type] || 'barista-sound-quick';
                 const el = document.getElementById(audioId);
                 if (el) {
                     el.currentTime = 0;
@@ -207,25 +270,28 @@ new class extends Component
                     if (p !== undefined) {
                         p.catch(err => {
                             console.warn('Direct audio play failed, falling back to chime:', err);
-                            this.playDingDong();
+                            fallback();
                         });
                     }
                 } else {
-                    this.playDingDong();
+                    fallback();
                 }
             } catch (e) {
-                this.playDingDong();
+                fallback();
             }
         }
      }"
      @click.window="unlockAudio()"
      @touchstart.window="unlockAudio()"
      @new-barista-order.window="playOrderAlert($event.detail?.orderType || 'quick')"
+     @cancelled-barista-order.window="playOrderAlert($event.detail?.orderType || 'cancelled_quick')"
      class="min-h-screen bg-[#FAF6F3] dark:bg-[#1A1412] text-[#2C211C] dark:text-[#F5EDE7] flex flex-col touch-manipulation select-none">
 
     <!-- Preloaded Sound Elements (Chime + Official Voice merged) -->
     <audio id="barista-sound-quick" preload="auto" src="{{ asset('sounds/voice-quick.wav') }}"></audio>
     <audio id="barista-sound-meeting" preload="auto" src="{{ asset('sounds/voice-meeting.wav') }}"></audio>
+    <audio id="barista-sound-cancelled-quick" preload="auto" src="{{ asset('sounds/voice-cancelled-quick.wav') }}"></audio>
+    <audio id="barista-sound-cancelled-meeting" preload="auto" src="{{ asset('sounds/voice-cancelled-meeting.wav') }}"></audio>
 
     <!-- Header -->
     <header class="bg-white dark:bg-[#241C19] border-b-2 border-[#E8DDD6] dark:border-[#3D2F29] px-5 py-3.5 flex flex-wrap items-center justify-between gap-3 sticky top-0 z-10 shadow-xs">
@@ -313,6 +379,41 @@ new class extends Component
 
     <!-- Split Kitchen Queues -->
     <main class="max-w-7xl mx-auto w-full p-4 md:p-5 flex-1">
+        @if($recentCancelledOrders->isNotEmpty())
+            <div class="mb-5 space-y-3">
+                @foreach($recentCancelledOrders as $cOrder)
+                    <div wire:key="barista-cancelled-alert-{{ $cOrder->id }}"
+                         class="bg-rose-600 text-white rounded-3xl p-4 md:p-5 border-4 border-rose-300 shadow-xl flex flex-wrap items-center justify-between gap-4">
+                        <div class="space-y-1">
+                            <div class="text-lg md:text-xl font-black tracking-tight flex items-center gap-2">
+                                <span>❌</span>
+                                <span>{{ __('cbvh.barista_cancelled_banner', ['id' => $cOrder->id]) }}</span>
+                            </div>
+                            <div class="text-sm font-bold text-rose-100">
+                                {{ $cOrder->order_type === 'meeting' ? '📅 ' . __('cbvh.barista_cancelled_meeting_msg') : '⚡ ' . __('cbvh.barista_cancelled_quick_msg') }}
+                                • {{ $cOrder->branch?->name ?? 'CBVH' }} — {{ $cOrder->room?->name ?? ($cOrder->location_detail ?: 'Office') }}
+                                @if($cOrder->delivery_time)
+                                    • 🕒 {{ $cOrder->delivery_time->format('h:i A') }}
+                                @endif
+                            </div>
+                            <div class="text-xs font-semibold text-rose-100 flex flex-wrap gap-2 pt-0.5">
+                                @foreach($cOrder->items as $it)
+                                    <span class="px-2 py-0.5 rounded-lg bg-rose-800/60">
+                                        {{ $it->quantity }}× {{ $it->drinkItem?->name ?? $it->drink_name_snapshot }}
+                                    </span>
+                                @endforeach
+                            </div>
+                        </div>
+                        <button type="button"
+                                wire:click="dismissCancelledAlert({{ $cOrder->id }})"
+                                class="px-5 py-3 rounded-2xl bg-white text-rose-700 hover:bg-rose-50 font-black text-base shadow-md cursor-pointer shrink-0 transition">
+                            👍 {{ __('cbvh.btn_got_it') }}
+                        </button>
+                    </div>
+                @endforeach
+            </div>
+        @endif
+
         <div class="grid grid-cols-1 {{ $viewFilter === 'all' ? 'md:grid-cols-2' : '' }} gap-5 md:gap-6 items-start">
 
             @if($viewFilter === 'all' || $viewFilter === 'instant')

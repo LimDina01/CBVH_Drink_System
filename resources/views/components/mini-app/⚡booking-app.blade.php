@@ -376,7 +376,10 @@ new class extends Component
                 ->lockForUpdate()
                 ->first();
 
-            if (! $order || $order->order_type !== 'meeting' || $order->status !== 'approved') {
+            $isCancellableType = $order->order_type === 'meeting'
+                || ($order->order_type === 'instant' && ! is_null($order->delivery_time));
+
+            if (! $order || ! $isCancellableType || $order->status !== 'approved') {
                 return null;
             }
 
@@ -1126,7 +1129,7 @@ new class extends Component
                                 @endif
                             </div>
 
-                            @if($order->order_type === 'meeting' && $order->status === 'approved')
+                            @if($order->status === 'approved' && ($order->order_type === 'meeting' || ($order->order_type === 'instant' && !is_null($order->delivery_time))))
                                 <div class="pt-2 border-t border-[#FAF6F3] dark:border-[#3D2F29] flex justify-end">
                                     <button type="button"
                                             wire:click="cancelMeetingOrder({{ $order->id }})"
