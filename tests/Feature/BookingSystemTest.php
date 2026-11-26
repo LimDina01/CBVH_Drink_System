@@ -2094,4 +2094,149 @@ class BookingSystemTest extends TestCase
 
         $this->assertDatabaseCount('drink_orders', 0);
     }
+
+    public function test_generated_calendar_date_stays_locked_and_branch_switch_resets_room(): void
+    {
+        $admin = User::where('role', 'admin')->first();
+        $hq = Branch::where('is_hq', true)->first();
+        $otherBranch = Branch::where('is_hq', false)->first();
+        $hqRoom = Room::where('branch_id', $hq->id)->first();
+        $otherRoom = Room::where('branch_id', $otherBranch->id)->first();
+        $hqDrink = DrinkItem::where('branch_id', $hq->id)->first();
+
+        $schedule = RecurringSchedule::create([
+            'title' => 'Daily Morning',
+            'branch_id' => $hq->id,
+            'room_id' => $hqRoom->id,
+            'delivery_time' => '08:30',
+            'is_active' => true,
+            'created_by' => $admin->id,
+        ]);
+        RecurringScheduleItem::create([
+            'recurring_schedule_id' => $schedule->id,
+            'drink_item_id' => $hqDrink->id,
+            'quantity' => 5,
+        ]);
+
+        $order = DrinkOrder::create([
+            'user_id' => $admin->id,
+            'branch_id' => $hq->id,
+            'room_id' => $hqRoom->id,
+            'order_type' => 'recurring',
+            'status' => 'approved',
+        ]);
+
+        $todayStr = today()->toDateString();
+        RecurringScheduleDate::create([
+            'recurring_schedule_id' => $schedule->id,
+            'delivery_date' => $todayStr,
+            'status' => 'generated',
+            'generated_order_id' => $order->id,
+        ]);
+
+        $component = Livewire::actingAs($admin)
+            ->test('admin.approval-portal')
+            ->set('activeSection', 'recurring')
+            ->call('toggleScheduleDate', $todayStr)
+            ->call('saveScheduleCalendarDates');
+
+        // Generated record must stay generated (cannot be overwritten to 'off')
+        $this->assertDatabaseHas('recurring_schedule_dates', [
+            'recurring_schedule_id' => $schedule->id,
+            'delivery_date' => $todayStr,
+            'status' => 'generated',
+            'generated_order_id' => $order->id,
+        ]);
+
+        // Navigating to next month must still show Today's generated status accurately
+        $component->call('nextMonth')
+            ->assertSee("Order #{$order->id} generated for today");
+
+        // Switching branch resets room_id and swaps incompatible drink items
+        $component->set('scheduleBranchId', $otherBranch->id)
+            ->assertSet('scheduleRoomId', $otherRoom->id);
+    }
+
+    public function test_reports_exclude_rejected_orders_from_cup_totals_and_support_recurring_filter(): void
+    {
+        $admin = User::where('role', 'admin')->first();
+        $employee = User::where('email', 'employee@company.com')->first();
+        $hq = Branch::where('is_hq', true)->first();
+        $room = Room::where('branch_id', $hq->id)->first();
+        $drink = DrinkItem::where('branch_id', $hq->id)->first();
+
+        $completed = DrinkOrder::create([
+            'user_id' => $employee->id,
+            'branch_id' => $hq->id,
+            'room_id' => $room->id,
+            'order_type' => 'instant',
+            'status' => 'completed',
+        ]);
+        $completed->items()->create(['drink_item_id' => $drink->id, 'drink_name_snapshot' => $drink->name, 'quantity' => 3]);
+
+        $rejected = DrinkOrder::create([
+            'user_id' => $employee->id,
+            'branch_id' => $hq->id,
+            'room_id' => $room->id,
+            'order_type' => 'instant',
+            'status' => 'rejected_by_barista',
+        ]);
+        $rejected->items()->create(['drink_item_id' => $drink->id, 'drink_name_snapshot' => $drink->name, 'quantity' => 5]);
+
+        $recurring = DrinkOrder::create([
+            'user_id' => $admin->id,
+            'branch_id' => $hq->id,
+            'room_id' => $room->id,
+            'order_type' => 'recurring',
+            'status' => 'approved',
+        ]);
+        $recurring->items()->create(['drink_item_id' => $drink->id, 'drink_name_snapshot' => $drink->name, 'quantity' => 4]);
+
+        Livewire::actingAs($admin)
+            ->test('admin.approval-portal')
+            ->assertViewHas('totalOrders', 3)
+            ->assertViewHas('totalCups', 7)
+            ->assertViewHas('recurringCount', 1)
+            ->set('filterStatus', 'rejected_by_barista')
+            ->assertViewHas('totalCups', 5)
+            ->set('filterStatus', 'all')
+            ->set('filterType', 'recurring')
+            ->assertViewHas('totalOrders', 1)
+            ->assertViewHas('totalCups', 4);
+    }
+
+    public function test_copy_previous_month_falls_back_to_prefill_with_count_and_reactivates_off_days(): void
+    {
+        $admin = User::where('role', 'admin')->first();
+        $hq = Branch::where('is_hq', true)->first();
+
+        $schedule = RecurringSchedule::create([
+            'title' => 'Weekday Office',
+            'branch_id' => $hq->id,
+            'delivery_time' => '08:30',
+            'is_active' => true,
+            'created_by' => $admin->id,
+        ]);
+
+        // Find the first weekday (Mon-Fri) of current month and mark it 'off'
+        $firstWeekday = today()->copy()->startOfMonth();
+        while ($firstWeekday->isWeekend()) {
+            $firstWeekday->addDay();
+        }
+
+        RecurringScheduleDate::create([
+            'recurring_schedule_id' => $schedule->id,
+            'delivery_date' => $firstWeekday->toDateString(),
+            'status' => 'off',
+        ]);
+
+        $count = app(RecurringOrderService::class)->copyPreviousMonth($schedule, today()->year, today()->month);
+
+        $this->assertGreaterThan(15, $count);
+        $this->assertDatabaseHas('recurring_schedule_dates', [
+            'recurring_schedule_id' => $schedule->id,
+            'delivery_date' => $firstWeekday->toDateString(),
+            'status' => 'scheduled',
+        ]);
+    }
 }

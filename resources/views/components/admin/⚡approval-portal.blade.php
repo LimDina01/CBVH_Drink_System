@@ -809,7 +809,7 @@ new class extends Component
                 'Ordered At',
                 'In Delivery At',
                 'Completed At',
-                'Auto Completed (10m)',
+                'Auto Completed',
             ]);
 
             foreach ($orders as $order) {
@@ -852,7 +852,10 @@ new class extends Component
 
     public function exportDrinkTotalsCsv()
     {
-        $orders = $this->buildFilteredOrdersQuery()->with('items.drinkItem')->get();
+        $queryOrders = $this->buildFilteredOrdersQuery()->with('items.drinkItem')->get();
+        $orders = in_array($this->filterStatus, ['rejected_by_barista', 'rejected_by_approver'], true)
+            ? $queryOrders
+            : $queryOrders->whereNotIn('status', ['rejected_by_barista', 'rejected_by_approver']);
         $filename = 'cbvh-drink-summary-' . now()->format('Y-m-d_His') . '.csv';
 
         return response()->streamDownload(function () use ($orders) {
@@ -1046,6 +1049,17 @@ new class extends Component
 
     public function toggleScheduleDate(string $dateStr): void
     {
+        if ($this->scheduleId) {
+            $isGenerated = RecurringScheduleDate::where('recurring_schedule_id', $this->scheduleId)
+                ->whereDate('delivery_date', $dateStr)
+                ->where('status', 'generated')
+                ->exists();
+
+            if ($isGenerated) {
+                return;
+            }
+        }
+
         if (!empty($this->stagedScheduleDates[$dateStr])) {
             unset($this->stagedScheduleDates[$dateStr]);
         } else {
@@ -1067,14 +1081,10 @@ new class extends Component
 
         $stagedActive = array_keys(array_filter($this->stagedScheduleDates));
 
-        // Dates removed from staging
+        // Dates removed from staging (never alter already-generated historical dates)
         foreach ($existing as $dateStr => $rec) {
-            if (!in_array($dateStr, $stagedActive, true)) {
-                if ($rec->status === 'generated') {
-                    $rec->update(['status' => 'off']);
-                } else {
-                    $rec->delete();
-                }
+            if (!in_array($dateStr, $stagedActive, true) && $rec->status !== 'generated') {
+                $rec->delete();
             }
         }
 
@@ -1189,15 +1199,21 @@ new class extends Component
 
     public function updatedScheduleBranchId($value): void
     {
+        $this->scheduleRoomId = Room::where('branch_id', $value)
+            ->where('is_active', true)
+            ->value('id');
+
         $branchDrinks = DrinkItem::where('branch_id', $value)
             ->where('is_available', true)
             ->get();
 
-        $defaultDrinkId = $branchDrinks->first()?->id;
+        $defaultDrink = $branchDrinks->first();
+        $defaultDrinkId = $defaultDrink?->id;
 
         foreach ($this->scheduleItems as &$it) {
             if (!$branchDrinks->contains('id', $it['drink_item_id'])) {
                 $it['drink_item_id'] = $defaultDrinkId;
+                $it['name'] = $defaultDrink?->name ?? '';
             }
         }
         unset($it);
@@ -1216,10 +1232,13 @@ new class extends Component
 
         $allFilteredOrders = $this->buildFilteredOrdersQuery()->get();
         $paginatedOrders = $this->buildFilteredOrdersQuery()->paginate($this->perPage);
-        $totalCups = $allFilteredOrders->sum(fn($o) => $o->items->sum('quantity'));
+        $servedOrders = in_array($this->filterStatus, ['rejected_by_barista', 'rejected_by_approver'], true)
+            ? $allFilteredOrders
+            : $allFilteredOrders->whereNotIn('status', ['rejected_by_barista', 'rejected_by_approver']);
+        $totalCups = $servedOrders->sum(fn($o) => $o->items->sum('quantity'));
 
         $drinkTotals = [];
-        foreach ($allFilteredOrders as $order) {
+        foreach ($servedOrders as $order) {
             foreach ($order->items as $it) {
                 $base = \App\Support\CbvhLocale::toBaseDrinkName($it->drinkItem?->name ?? $it->drink_name_snapshot ?? 'Other');
                 $category = $it->drinkItem?->category ?? $it->drink_category_snapshot ?? 'drink';
@@ -1352,16 +1371,24 @@ new class extends Component
             ? RecurringSchedule::with(['branch', 'items.drinkItem'])->find($this->scheduleId)
             : null;
 
+        $todaySavedScheduleDate = $this->scheduleId
+            ? RecurringScheduleDate::where('recurring_schedule_id', $this->scheduleId)
+                ->whereDate('delivery_date', today())
+                ->first()
+            : null;
+
         return [
             'branches' => Branch::all(),
             'rooms' => Room::all(),
             'currentSavedSchedule' => $currentSavedSchedule,
+            'todaySavedScheduleDate' => $todaySavedScheduleDate,
             'orders' => $paginatedOrders,
             'totalOrders' => $allFilteredOrders->count(),
             'totalCups' => $totalCups,
             'quickCount' => $allFilteredOrders->where('order_type', 'instant')->count(),
             'meetingCount' => $allFilteredOrders->where('order_type', 'meeting')->count(),
             'extendCount' => $allFilteredOrders->where('order_type', 'extend')->count(),
+            'recurringCount' => $allFilteredOrders->where('order_type', 'recurring')->count(),
             'drinkTotals' => $drinkTotals,
             'filterUsers' => User::orderBy('name')->get(),
             'users' => $paginatedStaff,
@@ -1555,7 +1582,7 @@ new class extends Component
 
         @if($activeSection === 'reports')
             <!-- Quick Summary Cards -->
-            <div class="grid grid-cols-2 md:grid-cols-5 gap-4">
+            <div class="grid grid-cols-2 md:grid-cols-6 gap-4">
                 <div class="bg-white dark:bg-[#241C19] p-4 rounded-2xl border border-[#E8DDD6] shadow-2xs">
                     <div class="text-[11px] font-bold text-[#7C6A60] uppercase">{{ __('cbvh.total_orders') }}</div>
                     <div class="text-2xl font-black text-[#2C211C] dark:text-[#F5EDE7] mt-1">{{ $totalOrders }}</div>
@@ -1575,6 +1602,10 @@ new class extends Component
                 <div class="bg-purple-50 p-4 rounded-2xl border border-purple-200 shadow-2xs">
                     <div class="text-[11px] font-bold text-purple-800 uppercase">🔄 {{ __('cbvh.reason_spilled') }} / +</div>
                     <div class="text-2xl font-black text-purple-900 mt-1">{{ $extendCount }}</div>
+                </div>
+                <div class="bg-emerald-50 p-4 rounded-2xl border border-emerald-200 shadow-2xs">
+                    <div class="text-[11px] font-bold text-emerald-800 uppercase">📆 {{ __('cbvh.recurring_badge') }}</div>
+                    <div class="text-2xl font-black text-emerald-900 mt-1">{{ $recurringCount }}</div>
                 </div>
             </div>
 
@@ -1656,6 +1687,7 @@ new class extends Component
                             <option value="instant">⚡ {{ __('cbvh.quick_drink') }}</option>
                             <option value="meeting">📅 {{ __('cbvh.meeting_drink') }}</option>
                             <option value="extend">🔄 {{ __('cbvh.reason_spilled') }}</option>
+                            <option value="recurring">📆 {{ __('cbvh.recurring_badge') }}</option>
                         </select>
                     </div>
 
@@ -2574,7 +2606,7 @@ new class extends Component
 
                                     <button type="button"
                                             wire:click="toggleScheduleDate('{{ $dateStr }}')"
-                                            @disabled($isSunday)
+                                            @disabled($isSunday || $isGenerated)
                                             class="h-16 rounded-xl border p-1.5 text-left transition flex flex-col justify-between cursor-pointer relative group
                                                    {{ $isToday ? 'ring-2 ring-amber-500 ' : '' }}
                                                    {{ $isSunday ? 'bg-[#FAF6F3]/40 dark:bg-[#1A1412]/40 border-dashed border-[#E8DDD6]/60 dark:border-[#3D2F29]/60 opacity-40 cursor-not-allowed' :
@@ -2629,14 +2661,12 @@ new class extends Component
                             <div class="text-xs font-black text-[#835440] dark:text-[#E8CFC1] uppercase tracking-wide flex items-center gap-1.5">
                                 <span>🚀</span> Today's Dispatch Status
                             </div>
-                            @php
-                                $todayDateStr = today()->toDateString();
-                                $todayScheduled = $monthScheduledDates->get($todayDateStr);
-                            @endphp
                             <div class="text-sm font-bold text-[#2C211C] dark:text-[#F5EDE7]">
-                                @if($todayScheduled && $todayScheduled->status === 'generated')
-                                    ✅ Order #{{ $todayScheduled->generated_order_id }} generated for today and sent to Barista.
-                                @elseif($todayScheduled)
+                                @if($todaySavedScheduleDate && $todaySavedScheduleDate->status === 'generated')
+                                    ✅ Order #{{ $todaySavedScheduleDate->generated_order_id }} generated for today and sent to Barista.
+                                @elseif(!$scheduleIsActive)
+                                    ⏸️ Auto-dispatch is currently PAUSED (toggle Active on to resume automatic dispatch).
+                                @elseif($todaySavedScheduleDate && $todaySavedScheduleDate->status === 'scheduled')
                                     🗓️ Today is scheduled for delivery at {{ $scheduleDeliveryTime }}.
                                 @else
                                     ⏸️ Today is currently marked as Off / Holiday in the calendar.

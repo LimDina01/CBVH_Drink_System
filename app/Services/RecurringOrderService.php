@@ -138,10 +138,11 @@ class RecurringOrderService
     /**
      * Prefill working days for a month (excludes Sundays).
      */
-    public function prefillMonth(RecurringSchedule $schedule, int $year, int $month, bool $includeSaturday = false): void
+    public function prefillMonth(RecurringSchedule $schedule, int $year, int $month, bool $includeSaturday = false): int
     {
         $start = Carbon::createFromDate($year, $month, 1)->startOfMonth();
         $daysInMonth = $start->daysInMonth;
+        $added = 0;
 
         for ($day = 1; $day <= $daysInMonth; $day++) {
             $current = Carbon::createFromDate($year, $month, $day);
@@ -153,19 +154,25 @@ class RecurringOrderService
 
             if ($isWorkingDay) {
                 $dateStr = $current->toDateString();
-                $exists = RecurringScheduleDate::where('recurring_schedule_id', $schedule->id)
+                $existing = RecurringScheduleDate::where('recurring_schedule_id', $schedule->id)
                     ->whereDate('delivery_date', $dateStr)
-                    ->exists();
+                    ->first();
 
-                if (! $exists) {
+                if (! $existing) {
                     RecurringScheduleDate::create([
                         'recurring_schedule_id' => $schedule->id,
                         'delivery_date' => $dateStr,
                         'status' => 'scheduled',
                     ]);
+                    $added++;
+                } elseif ($existing->status !== 'generated' && $existing->status !== 'scheduled' && is_null($existing->generated_order_id)) {
+                    $existing->update(['status' => 'scheduled']);
+                    $added++;
                 }
             }
         }
+
+        return $added;
     }
 
     /**
@@ -187,9 +194,7 @@ class RecurringOrderService
 
         if (empty($prevDates)) {
             // Default to Mon-Fri if previous month had no schedule
-            $this->prefillMonth($schedule, $targetYear, $targetMonth, false);
-
-            return 0;
+            return $this->prefillMonth($schedule, $targetYear, $targetMonth, false);
         }
 
         $targetDaysInMonth = $targetStart->daysInMonth;
@@ -201,16 +206,19 @@ class RecurringOrderService
                 // Never schedule on Sunday
                 if ($targetDate->dayOfWeek !== 0) {
                     $tDateStr = $targetDate->toDateString();
-                    $exists = RecurringScheduleDate::where('recurring_schedule_id', $schedule->id)
+                    $existing = RecurringScheduleDate::where('recurring_schedule_id', $schedule->id)
                         ->whereDate('delivery_date', $tDateStr)
-                        ->exists();
+                        ->first();
 
-                    if (! $exists) {
+                    if (! $existing) {
                         RecurringScheduleDate::create([
                             'recurring_schedule_id' => $schedule->id,
                             'delivery_date' => $tDateStr,
                             'status' => 'scheduled',
                         ]);
+                        $added++;
+                    } elseif ($existing->status !== 'generated' && $existing->status !== 'scheduled' && is_null($existing->generated_order_id)) {
+                        $existing->update(['status' => 'scheduled']);
                         $added++;
                     }
                 }

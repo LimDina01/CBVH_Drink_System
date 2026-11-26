@@ -78,6 +78,8 @@ new class extends Component
         if ($order && in_array($order->status, ['approved', 'preparing', 'in_delivery'])) {
             $order->update([
                 'status' => 'completed',
+                'barista_id' => $order->barista_id ?? Auth::id(),
+                'barista_accepted_at' => $order->barista_accepted_at ?? now(),
                 'ready_at' => $order->ready_at ?? now(),
                 'in_delivery_at' => $order->in_delivery_at ?? now(),
                 'completed_at' => now(),
