@@ -20,6 +20,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 use Livewire\Livewire;
@@ -1995,6 +1996,8 @@ class BookingSystemTest extends TestCase
 
     public function test_deleting_or_unchecking_drink_preserves_past_order_history(): void
     {
+        Cache::forever('enforce_working_hours', false);
+
         $admin = User::where('role', 'admin')->first();
         $employee = User::where('email', 'employee@company.com')->first();
         $hq = Branch::where('is_hq', true)->first();
@@ -2338,8 +2341,8 @@ class BookingSystemTest extends TestCase
         $instantOrder->update(['status' => 'cancelled']);
 
         $baristaScreen->call('$refresh')
-            ->assertDispatched('new-barista-order', orderType: 'quick')
-            ->assertDispatched('cancelled-barista-order', orderType: 'cancelled_quick');
+            ->assertDispatched('new-barista-order', orderType: 'quick', orderId: $newOrder->id)
+            ->assertDispatched('cancelled-barista-order', orderType: 'cancelled_quick', orderId: $instantOrder->id);
     }
 
     public function test_admin_can_cancel_active_order_and_cancelled_orders_are_excluded_from_cup_totals(): void

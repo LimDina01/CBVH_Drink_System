@@ -140,7 +140,7 @@ new class extends Component
         if ($latestApproved && $latestApproved->id > $this->lastKnownOrderId) {
             $this->lastKnownOrderId = (int) $latestApproved->id;
             $orderType = ($latestApproved->order_type === 'meeting') ? 'meeting' : 'quick';
-            $this->dispatch('new-barista-order', orderType: $orderType);
+            $this->dispatch('new-barista-order', orderType: $orderType, orderId: (int) $latestApproved->id);
         }
 
         $completedToday = DrinkOrder::where('status', 'completed')
@@ -181,12 +181,18 @@ new class extends Component
             ->orderByDesc('updated_at')
             ->get();
 
+        $latestNewCancelled = null;
         foreach ($recentCancelledOrders as $cOrder) {
             if (! in_array((int) $cOrder->id, $this->seenCancelledIds, true)) {
                 $this->seenCancelledIds[] = (int) $cOrder->id;
-                $cancelType = ($cOrder->order_type === 'meeting') ? 'cancelled_meeting' : 'cancelled_quick';
-                $this->dispatch('cancelled-barista-order', orderType: $cancelType);
+                if (! $latestNewCancelled) {
+                    $latestNewCancelled = $cOrder;
+                }
             }
+        }
+        if ($latestNewCancelled) {
+            $cancelType = ($latestNewCancelled->order_type === 'meeting') ? 'cancelled_meeting' : 'cancelled_quick';
+            $this->dispatch('cancelled-barista-order', orderType: $cancelType, orderId: (int) $latestNewCancelled->id);
         }
 
         return [
@@ -213,6 +219,8 @@ new class extends Component
         confirmLogout: false,
         audioCtx: null,
         wakeLock: null,
+        activeSource: null,
+        lastAlertAt: 0,
         rawBuffers: {},
         decodedBuffers: {},
         soundUrls: {
@@ -319,8 +327,30 @@ new class extends Component
                 });
             } catch (e) {}
         },
-        async playOrderAlert(type = 'quick') {
+        wasAlreadyPlayed(key) {
+            if (!key) return false;
+            try {
+                const storageKey = 'cbvh_barista_played_' + new Date().toISOString().slice(0, 10);
+                const list = JSON.parse(localStorage.getItem(storageKey) || '[]');
+                if (list.includes(key)) return true;
+                list.push(key);
+                localStorage.setItem(storageKey, JSON.stringify(list.slice(-200)));
+                return false;
+            } catch (e) {
+                return false;
+            }
+        },
+        async playOrderAlert(type = 'quick', orderId = null) {
             if (!this.soundOn) return;
+            if (orderId) {
+                const isCancel = (type === 'cancelled_quick' || type === 'cancelled_meeting');
+                const dedupKey = (isCancel ? 'cancel:' : 'new:') + orderId;
+                if (this.wasAlreadyPlayed(dedupKey)) return;
+            }
+
+            const nowMs = Date.now();
+            if (orderId && (nowMs - this.lastAlertAt) < 1200) return;
+            this.lastAlertAt = nowMs;
 
             const isCancel = (type === 'cancelled_quick' || type === 'cancelled_meeting');
             const fallback = () => isCancel ? this.playCancelAlertBeep() : this.playDingDong();
@@ -340,9 +370,14 @@ new class extends Component
                     }
 
                     if (this.decodedBuffers[type]) {
+                        if (this.activeSource) {
+                            try { this.activeSource.stop(); } catch (e) {}
+                        }
                         const src = ctx.createBufferSource();
                         src.buffer = this.decodedBuffers[type];
                         src.connect(ctx.destination);
+                        this.activeSource = src;
+                        src.onended = () => { if (this.activeSource === src) this.activeSource = null; };
                         src.start(0);
                         return;
                     }
@@ -371,8 +406,8 @@ new class extends Component
      }"
      @click.window="unlockAudio()"
      @touchstart.window="unlockAudio()"
-     @new-barista-order.window="playOrderAlert($event.detail?.orderType || $event.detail?.[0]?.orderType || 'quick')"
-     @cancelled-barista-order.window="playOrderAlert($event.detail?.orderType || $event.detail?.[0]?.orderType || 'cancelled_quick')"
+     @new-barista-order.window="playOrderAlert($event.detail?.orderType || $event.detail?.[0]?.orderType || 'quick', $event.detail?.orderId || $event.detail?.[0]?.orderId || null)"
+     @cancelled-barista-order.window="playOrderAlert($event.detail?.orderType || $event.detail?.[0]?.orderType || 'cancelled_quick', $event.detail?.orderId || $event.detail?.[0]?.orderId || null)"
      class="min-h-screen bg-[#FAF6F3] dark:bg-[#1A1412] text-[#2C211C] dark:text-[#F5EDE7] flex flex-col touch-manipulation select-none">
 
     <!-- Preloaded Sound Elements (Fallback, preserved across Livewire poll morphs) -->
