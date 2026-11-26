@@ -10,6 +10,8 @@ use Illuminate\Support\Facades\Cache;
 new class extends Component
 {
     public $viewFilter = 'all'; // 'all', 'instant', 'meeting'
+    public bool $showHistory = false;
+    public string $historyFilter = 'all'; // 'all', 'cancelled', 'completed'
     public $flashMessage = null;
     public int $lastKnownOrderId = 0;
     public array $dismissedCancelledIds = [];
@@ -145,6 +147,33 @@ new class extends Component
             ->whereDate('completed_at', today())
             ->count();
 
+        $cancelledTodayCount = DrinkOrder::whereIn('status', ['cancelled', 'rejected_by_barista'])
+            ->whereDate('updated_at', today())
+            ->count();
+
+        $todayHistoryOrders = collect();
+        if ($this->showHistory) {
+            $historyQuery = DrinkOrder::with(['user', 'branch', 'room', 'items.drinkItem'])
+                ->where(function ($q) {
+                    $q->where(function ($cq) {
+                        $cq->where('status', 'completed')->whereDate('completed_at', today());
+                    })->orWhere(function ($rq) {
+                        $rq->whereIn('status', ['cancelled', 'rejected_by_barista'])->whereDate('updated_at', today());
+                    });
+                });
+
+            if ($this->historyFilter === 'cancelled') {
+                $historyQuery->whereIn('status', ['cancelled', 'rejected_by_barista']);
+            } elseif ($this->historyFilter === 'completed') {
+                $historyQuery->where('status', 'completed');
+            }
+
+            $todayHistoryOrders = $historyQuery
+                ->orderByDesc('updated_at')
+                ->limit(80)
+                ->get();
+        }
+
         $recentCancelledOrders = DrinkOrder::where('status', 'cancelled')
             ->where('updated_at', '>=', now()->subMinutes(60))
             ->when(! empty($this->dismissedCancelledIds), fn ($q) => $q->whereNotIn('id', $this->dismissedCancelledIds))
@@ -164,6 +193,8 @@ new class extends Component
             'instantOrders' => $instantOrders,
             'meetingOrders' => $meetingOrders,
             'recentCancelledOrders' => $recentCancelledOrders,
+            'todayHistoryOrders' => $todayHistoryOrders,
+            'cancelledTodayCount' => $cancelledTodayCount,
             'newCount' => $newCount,
             'preparingCount' => $orders->where('status', 'preparing')->count(),
             'deliveryCount' => $orders->where('status', 'in_delivery')->count(),
@@ -389,6 +420,18 @@ new class extends Component
                 {{ __('cbvh.done_today', ['count' => $completedToday]) }}
             </div>
 
+            <button type="button" wire:click="$toggle('showHistory')"
+                    class="text-sm px-3.5 py-2 rounded-xl font-bold border transition cursor-pointer flex items-center gap-1.5 {{ $showHistory ? 'bg-[#9E6B55] text-white border-[#835440] shadow-xs' : 'bg-white dark:bg-[#241C19] text-[#2C211C] dark:text-[#F5EDE7] border-[#E8DDD6] hover:bg-[#FAF6F3]' }}">
+                @if($showHistory)
+                    <span>{{ __('cbvh.barista_back_to_orders') }}</span>
+                @else
+                    <span>📜 {{ __('cbvh.barista_history_btn') }}</span>
+                    @if($cancelledTodayCount > 0)
+                        <span class="px-1.5 py-0.5 rounded-full bg-rose-600 text-white text-[11px] font-black">{{ $cancelledTodayCount }} ❌</span>
+                    @endif
+                @endif
+            </button>
+
             <!-- Manager / Advanced Menu (prevents accidental taps by barista) -->
             <div class="relative" @click.outside="menuOpen = false">
                 <button type="button" @click="menuOpen = !menuOpen" title="{{ __('cbvh.settings_menu') }}"
@@ -479,6 +522,83 @@ new class extends Component
             </div>
         @endif
 
+        @if($showHistory)
+            <!-- Read-Only Today's History View -->
+            <section class="space-y-4">
+                <div class="bg-white dark:bg-[#241C19] rounded-2xl border-2 border-[#E8DDD6] dark:border-[#3D2F29] p-4 flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                        <h2 class="text-lg font-black text-[#2C211C] dark:text-[#F5EDE7]">📜 {{ __('cbvh.barista_history_title') }}</h2>
+                        <p class="text-xs font-semibold text-[#7C6A60]">{{ __('cbvh.barista_history_sub') }}</p>
+                    </div>
+                    <div class="flex flex-wrap items-center gap-2">
+                        <button type="button" wire:click="$set('historyFilter', 'all')"
+                                class="px-3 py-1.5 rounded-xl text-xs font-bold border cursor-pointer transition {{ $historyFilter === 'all' ? 'bg-[#9E6B55] text-white border-[#835440]' : 'bg-[#FAF6F3] text-[#7C6A60] border-[#E8DDD6]' }}">
+                            {{ __('cbvh.barista_history_all') }}
+                        </button>
+                        <button type="button" wire:click="$set('historyFilter', 'cancelled')"
+                                class="px-3 py-1.5 rounded-xl text-xs font-bold border cursor-pointer transition {{ $historyFilter === 'cancelled' ? 'bg-rose-600 text-white border-rose-700' : 'bg-rose-50 text-rose-700 border-rose-200' }}">
+                            ❌ {{ __('cbvh.barista_history_cancelled') }} ({{ $cancelledTodayCount }})
+                        </button>
+                        <button type="button" wire:click="$set('historyFilter', 'completed')"
+                                class="px-3 py-1.5 rounded-xl text-xs font-bold border cursor-pointer transition {{ $historyFilter === 'completed' ? 'bg-emerald-600 text-white border-emerald-700' : 'bg-emerald-50 text-emerald-800 border-emerald-200' }}">
+                            ✅ {{ __('cbvh.barista_history_completed') }} ({{ $completedToday }})
+                        </button>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    @forelse($todayHistoryOrders as $hOrder)
+                        @php
+                            $isCancelled = in_array($hOrder->status, ['cancelled', 'rejected_by_barista'], true);
+                            $typeIcon = match($hOrder->order_type) {
+                                'meeting' => '📅 ' . __('cbvh.meeting_drink'),
+                                'extend' => '➕ ' . __('cbvh.btn_order_more_spilled'),
+                                'recurring' => '📆 ' . __('cbvh.recurring_badge'),
+                                default => '⚡ ' . __('cbvh.quick_drink'),
+                            };
+                        @endphp
+                        <div wire:key="barista-history-card-{{ $hOrder->id }}"
+                             class="bg-white dark:bg-[#241C19] rounded-2xl border-2 p-4 space-y-2.5 {{ $isCancelled ? 'border-rose-300 bg-rose-50/40 dark:bg-rose-950/20' : 'border-[#E8DDD6] dark:border-[#3D2F29]' }}">
+                            <div class="flex items-start justify-between gap-2">
+                                <div>
+                                    <div class="flex items-center gap-2">
+                                        <span class="text-base font-black text-[#2C211C] dark:text-[#F5EDE7]">#{{ $hOrder->id }}</span>
+                                        <span class="text-xs font-bold text-[#835440]">{{ $typeIcon }}</span>
+                                    </div>
+                                    <div class="text-xs font-semibold text-[#7C6A60]">
+                                        {{ $hOrder->branch?->name ?? 'CBVH' }} — {{ $hOrder->room?->name ?? ($hOrder->location_detail ?: 'Office') }}
+                                        • 👤 {{ $hOrder->user?->name ?? 'Staff' }}
+                                    </div>
+                                </div>
+                                <span class="px-3 py-1 rounded-full text-xs font-black uppercase shrink-0 {{ $isCancelled ? 'bg-rose-600 text-white' : 'bg-emerald-100 text-emerald-800' }}">
+                                    {{ $isCancelled ? '❌ ' . __('cbvh.status_cancelled') : '✅ ' . __('cbvh.status_completed') }}
+                                </span>
+                            </div>
+
+                            <div class="flex flex-wrap gap-1.5">
+                                @foreach($hOrder->items as $it)
+                                    <span class="px-2.5 py-1 rounded-lg text-xs font-bold bg-[#FAF6F3] dark:bg-[#1E1715] border border-[#E8DDD6] dark:border-[#3D2F29] text-[#2C211C] dark:text-[#F5EDE7]">
+                                        {{ $it->quantity }}× {{ \App\Support\CbvhLocale::drink($it->drinkItem?->name ?? $it->drink_name_snapshot) }}
+                                    </span>
+                                @endforeach
+                            </div>
+
+                            <div class="flex flex-wrap items-center justify-between gap-2 text-[11px] font-semibold text-[#7C6A60] pt-1 border-t border-[#FAF6F3] dark:border-[#3D2F29]">
+                                <span>🕒 {{ ($hOrder->completed_at ?? $hOrder->updated_at ?? $hOrder->created_at)?->format('h:i A') }}</span>
+                                @if($isCancelled && $hOrder->approver_rejection_reason)
+                                    <span class="text-rose-700 font-bold">{{ $hOrder->approver_rejection_reason }}</span>
+                                @endif
+                            </div>
+                        </div>
+                    @empty
+                        <div class="md:col-span-2 py-12 text-center bg-white dark:bg-[#241C19] rounded-3xl border-2 border-dashed border-[#E8DDD6]">
+                            <div class="text-3xl mb-2">📜</div>
+                            <div class="text-base font-bold text-[#7C6A60]">{{ __('cbvh.barista_history_empty') }}</div>
+                        </div>
+                    @endforelse
+                </div>
+            </section>
+        @else
         <div class="grid grid-cols-1 {{ $viewFilter === 'all' ? 'md:grid-cols-2' : '' }} gap-5 md:gap-6 items-start">
 
             @if($viewFilter === 'all' || $viewFilter === 'instant')
@@ -524,6 +644,7 @@ new class extends Component
             @endif
 
         </div>
+        @endif
     </main>
 
     <x-logout-confirm-modal mode="form" />

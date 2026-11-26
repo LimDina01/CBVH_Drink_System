@@ -2378,4 +2378,48 @@ class BookingSystemTest extends TestCase
         Http::assertSent(fn ($req) => ($req['chat_id'] ?? null) === '999888777');
         Http::assertSent(fn ($req) => ($req['chat_id'] ?? null) === '111222333');
     }
+
+    public function test_barista_can_view_read_only_today_history_and_filter_cancelled_orders(): void
+    {
+        $barista = User::where('role', 'barista')->first();
+        $employee = User::where('email', 'employee@company.com')->first();
+        $hq = Branch::where('is_hq', true)->first();
+        $room = Room::where('branch_id', $hq->id)->first();
+        $drink = DrinkItem::where('branch_id', $hq->id)->first();
+
+        $completed = DrinkOrder::create([
+            'user_id' => $employee->id,
+            'branch_id' => $hq->id,
+            'room_id' => $room->id,
+            'order_type' => 'instant',
+            'status' => 'completed',
+            'completed_at' => now(),
+        ]);
+        $completed->items()->create(['drink_item_id' => $drink->id, 'drink_name_snapshot' => $drink->name, 'quantity' => 1]);
+
+        $cancelled = DrinkOrder::create([
+            'user_id' => $employee->id,
+            'branch_id' => $hq->id,
+            'room_id' => $room->id,
+            'order_type' => 'meeting',
+            'delivery_time' => now()->addDay(),
+            'status' => 'cancelled',
+            'approver_rejection_reason' => 'Cancelled by requester',
+        ]);
+        $cancelled->items()->create(['drink_item_id' => $drink->id, 'drink_name_snapshot' => $drink->name, 'quantity' => 3]);
+
+        $component = Livewire::actingAs($barista)
+            ->test('barista.kitchen-display')
+            ->assertSet('showHistory', false)
+            ->set('showHistory', true)
+            ->assertSee("barista-history-card-{$completed->id}")
+            ->assertSee("barista-history-card-{$cancelled->id}")
+            ->assertSee('Cancelled by requester')
+            ->set('historyFilter', 'cancelled')
+            ->assertSee("barista-history-card-{$cancelled->id}")
+            ->assertDontSee("barista-history-card-{$completed->id}")
+            ->set('historyFilter', 'completed')
+            ->assertSee("barista-history-card-{$completed->id}")
+            ->assertDontSee("barista-history-card-{$cancelled->id}");
+    }
 }
