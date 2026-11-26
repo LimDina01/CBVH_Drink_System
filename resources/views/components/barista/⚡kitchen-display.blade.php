@@ -599,6 +599,24 @@ new class extends Component
                 </div>
             </section>
         @else
+        <!-- Queue View Switcher (Phone-friendly 1-tap tabs) -->
+        <div class="mb-4 flex flex-wrap items-center gap-2">
+            <button type="button" wire:click="$set('viewFilter', 'all')"
+                    class="px-3.5 py-2 rounded-xl text-xs md:text-sm font-black border transition cursor-pointer {{ $viewFilter === 'all' ? 'bg-[#2C211C] text-white border-[#2C211C] shadow-xs' : 'bg-white dark:bg-[#241C19] text-[#7C6A60] border-[#E8DDD6] hover:bg-[#FAF6F3]' }}">
+                {{ __('cbvh.filter_both') }} ({{ count($instantOrders) + count($meetingOrders) }})
+            </button>
+            <button type="button" wire:click="$set('viewFilter', 'instant')"
+                    class="px-3.5 py-2 rounded-xl text-xs md:text-sm font-black border transition cursor-pointer flex items-center gap-1.5 {{ $viewFilter === 'instant' ? 'bg-amber-500 text-white border-amber-600 shadow-xs' : 'bg-amber-50 text-amber-900 border-amber-200 hover:bg-amber-100' }}">
+                <span>⚡ {{ __('cbvh.filter_quick') }}</span>
+                <span class="px-1.5 py-0.5 rounded-full text-[11px] {{ $viewFilter === 'instant' ? 'bg-white/25 text-white' : 'bg-amber-200 text-amber-950' }}">{{ count($instantOrders) }}</span>
+            </button>
+            <button type="button" wire:click="$set('viewFilter', 'meeting')"
+                    class="px-3.5 py-2 rounded-xl text-xs md:text-sm font-black border transition cursor-pointer flex items-center gap-1.5 {{ $viewFilter === 'meeting' ? 'bg-[#9E6B55] text-white border-[#835440] shadow-xs' : 'bg-[#F5EDE7] text-[#835440] border-[#E8DDD6] hover:bg-[#EDE0D7]' }}">
+                <span>📅 {{ __('cbvh.filter_meeting') }}</span>
+                <span class="px-1.5 py-0.5 rounded-full text-[11px] {{ $viewFilter === 'meeting' ? 'bg-white/25 text-white' : 'bg-[#E8DDD6] text-[#2C211C]' }}">{{ count($meetingOrders) }}</span>
+            </button>
+        </div>
+
         <div class="grid grid-cols-1 {{ $viewFilter === 'all' ? 'md:grid-cols-2' : '' }} gap-5 md:gap-6 items-start">
 
             @if($viewFilter === 'all' || $viewFilter === 'instant')
