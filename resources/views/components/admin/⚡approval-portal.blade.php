@@ -1475,12 +1475,16 @@ new class extends Component
         soundOn: false,
         audioCtx: null,
         unlockAudio() {
-            ['admin-sound-quick', 'admin-sound-meeting'].forEach(id => {
-                const el = document.getElementById(id);
-                if (el) {
-                    el.load();
+            // AudioContext handles unlock cleanly on click without resetting buffered <audio> elements
+            try {
+                if (!this.audioCtx) {
+                    const Ctx = window.AudioContext || window.webkitAudioContext;
+                    if (Ctx) this.audioCtx = new Ctx();
                 }
-            });
+                if (this.audioCtx && this.audioCtx.state === 'suspended') {
+                    this.audioCtx.resume().catch(() => {});
+                }
+            } catch (e) {}
         },
         playDingDong() {
             try {
@@ -1536,8 +1540,10 @@ new class extends Component
      class="min-h-screen bg-[#FAF6F3]/80 dark:bg-[#1A1412]/90 text-[#2C211C] dark:text-[#F5EDE7] flex flex-col">
 
     <!-- Preloaded Sound Elements (Chime + Official Voice merged) -->
-    <audio id="admin-sound-quick" preload="auto" src="{{ asset('sounds/voice-quick.wav') }}"></audio>
-    <audio id="admin-sound-meeting" preload="auto" src="{{ asset('sounds/voice-meeting.wav') }}"></audio>
+    <div wire:ignore class="hidden">
+        <audio id="admin-sound-quick" preload="auto" src="/sounds/voice-quick.wav"></audio>
+        <audio id="admin-sound-meeting" preload="auto" src="/sounds/voice-meeting.wav"></audio>
+    </div>
     <!-- Header -->
     <header class="bg-white/95 dark:bg-[#241C19]/95 backdrop-blur-md border-b border-[#E8DDD6] dark:border-[#3D2F29] px-6 py-3.5 flex flex-wrap items-center justify-between gap-4 sticky top-0 z-10 shadow-[0_2px_16px_rgba(158,107,85,0.06)]">
         <div class="flex items-center space-x-3.5">

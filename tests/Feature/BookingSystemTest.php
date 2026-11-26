@@ -2322,10 +2322,24 @@ class BookingSystemTest extends TestCase
             ->assertSee(__('cbvh.barista_cancelled_banner', ['id' => $laterTodayQuickOrder->id]));
 
         // Simulate browser refresh (fresh component mount)
-        Livewire::actingAs($barista)
+        $baristaScreen = Livewire::actingAs($barista)
             ->test('barista.kitchen-display')
             ->assertDontSee(__('cbvh.barista_cancelled_banner', ['id' => $meetingOrder->id]))
             ->assertSee(__('cbvh.barista_cancelled_banner', ['id' => $laterTodayQuickOrder->id]));
+
+        // Simulate new order arriving & existing order cancelled during live poll
+        $newOrder = DrinkOrder::create([
+            'user_id' => $employee->id,
+            'branch_id' => $hq->id,
+            'room_id' => $room->id,
+            'order_type' => 'instant',
+            'status' => 'approved',
+        ]);
+        $instantOrder->update(['status' => 'cancelled']);
+
+        $baristaScreen->call('$refresh')
+            ->assertDispatched('new-barista-order', orderType: 'quick')
+            ->assertDispatched('cancelled-barista-order', orderType: 'cancelled_quick');
     }
 
     public function test_admin_can_cancel_active_order_and_cancelled_orders_are_excluded_from_cup_totals(): void

@@ -182,12 +182,29 @@ new class extends Component
         confirmLogout: false,
         audioCtx: null,
         wakeLock: null,
+        rawBuffers: {},
+        decodedBuffers: {},
+        soundUrls: {
+            quick: '/sounds/voice-quick.wav',
+            meeting: '/sounds/voice-meeting.wav',
+            cancelled_quick: '/sounds/voice-cancelled-quick.mp3',
+            cancelled_meeting: '/sounds/voice-cancelled-meeting.mp3',
+        },
         init() {
             this.keepScreenAwake();
+            this.preloadSounds();
             document.addEventListener('visibilitychange', () => {
                 if (document.visibilityState === 'visible') {
                     this.keepScreenAwake();
                 }
+            });
+        },
+        preloadSounds() {
+            Object.entries(this.soundUrls).forEach(([key, url]) => {
+                fetch(url)
+                    .then(r => r.ok ? r.arrayBuffer() : null)
+                    .then(buf => { if (buf) this.rawBuffers[key] = buf; })
+                    .catch(() => {});
             });
         },
         async keepScreenAwake() {
@@ -200,45 +217,28 @@ new class extends Component
                 }
             } catch (e) {}
         },
-        unlockAudio() {
-            this.keepScreenAwake();
-            if (this.audioUnlocked) return;
-            this.audioUnlocked = true;
-
+        async ensureAudioCtx() {
             try {
                 if (!this.audioCtx) {
                     const Ctx = window.AudioContext || window.webkitAudioContext;
                     if (Ctx) this.audioCtx = new Ctx();
                 }
-                if (this.audioCtx && this.audioCtx.state === 'suspended') {
-                    this.audioCtx.resume().catch(() => {});
+                if (!this.audioCtx) return null;
+                if (this.audioCtx.state === 'suspended') {
+                    await this.audioCtx.resume();
                 }
-            } catch (e) {}
-
-            ['barista-sound-quick', 'barista-sound-meeting', 'barista-sound-cancelled-quick', 'barista-sound-cancelled-meeting'].forEach(id => {
-                const el = document.getElementById(id);
-                if (el) {
-                    try {
-                        el.muted = true;
-                        const p = el.play();
-                        if (p !== undefined) {
-                            p.then(() => {
-                                el.pause();
-                                el.currentTime = 0;
-                                el.muted = false;
-                            }).catch(() => {
-                                el.muted = false;
-                            });
-                        } else {
-                            el.pause();
-                            el.currentTime = 0;
-                            el.muted = false;
-                        }
-                    } catch (e) {
-                        el.muted = false;
-                    }
+                if (this.audioCtx.state === 'running') {
+                    this.audioUnlocked = true;
                 }
-            });
+                return this.audioCtx;
+            } catch (e) {
+                return null;
+            }
+        },
+        unlockAudio() {
+            this.keepScreenAwake();
+            if (this.audioUnlocked) return;
+            this.ensureAudioCtx();
         },
         playCancelAlertBeep() {
             try {
@@ -288,51 +288,69 @@ new class extends Component
                 });
             } catch (e) {}
         },
-        playOrderAlert(type = 'quick') {
+        async playOrderAlert(type = 'quick') {
             if (!this.soundOn) return;
 
             const isCancel = (type === 'cancelled_quick' || type === 'cancelled_meeting');
             const fallback = () => isCancel ? this.playCancelAlertBeep() : this.playDingDong();
 
             try {
+                const ctx = await this.ensureAudioCtx();
+                if (ctx && ctx.state === 'running') {
+                    if (!this.decodedBuffers[type]) {
+                        let raw = this.rawBuffers[type];
+                        if (!raw && this.soundUrls[type]) {
+                            const res = await fetch(this.soundUrls[type]);
+                            if (res.ok) raw = await res.arrayBuffer();
+                        }
+                        if (raw) {
+                            this.decodedBuffers[type] = await ctx.decodeAudioData(raw.slice(0));
+                        }
+                    }
+
+                    if (this.decodedBuffers[type]) {
+                        const src = ctx.createBufferSource();
+                        src.buffer = this.decodedBuffers[type];
+                        src.connect(ctx.destination);
+                        src.start(0);
+                        return;
+                    }
+                }
+
                 const audioMap = {
                     quick: 'barista-sound-quick',
                     meeting: 'barista-sound-meeting',
                     cancelled_quick: 'barista-sound-cancelled-quick',
                     cancelled_meeting: 'barista-sound-cancelled-meeting',
                 };
-                const audioId = audioMap[type] || 'barista-sound-quick';
-                const el = document.getElementById(audioId);
+                const el = document.getElementById(audioMap[type] || 'barista-sound-quick');
                 if (el) {
                     el.muted = false;
                     el.pause();
                     el.currentTime = 0;
-                    const p = el.play();
-                    if (p !== undefined) {
-                        p.catch(err => {
-                            console.warn('Direct audio play failed, falling back to chime:', err);
-                            fallback();
-                        });
-                    }
-                } else {
-                    fallback();
+                    await el.play();
+                    return;
                 }
+                fallback();
             } catch (e) {
+                console.warn('Direct audio play failed, falling back to chime:', e);
                 fallback();
             }
         }
      }"
      @click.window="unlockAudio()"
      @touchstart.window="unlockAudio()"
-     @new-barista-order.window="playOrderAlert($event.detail?.orderType || 'quick')"
-     @cancelled-barista-order.window="playOrderAlert($event.detail?.orderType || 'cancelled_quick')"
+     @new-barista-order.window="playOrderAlert($event.detail?.orderType || $event.detail?.[0]?.orderType || 'quick')"
+     @cancelled-barista-order.window="playOrderAlert($event.detail?.orderType || $event.detail?.[0]?.orderType || 'cancelled_quick')"
      class="min-h-screen bg-[#FAF6F3] dark:bg-[#1A1412] text-[#2C211C] dark:text-[#F5EDE7] flex flex-col touch-manipulation select-none">
 
-    <!-- Preloaded Sound Elements (Chime + Official Voice merged) -->
-    <audio id="barista-sound-quick" preload="auto" src="{{ asset('sounds/voice-quick.wav') }}"></audio>
-    <audio id="barista-sound-meeting" preload="auto" src="{{ asset('sounds/voice-meeting.wav') }}"></audio>
-    <audio id="barista-sound-cancelled-quick" preload="auto" src="{{ asset('sounds/voice-cancelled-quick.mp3') }}"></audio>
-    <audio id="barista-sound-cancelled-meeting" preload="auto" src="{{ asset('sounds/voice-cancelled-meeting.mp3') }}"></audio>
+    <!-- Preloaded Sound Elements (Fallback, preserved across Livewire poll morphs) -->
+    <div wire:ignore class="hidden">
+        <audio id="barista-sound-quick" preload="auto" src="/sounds/voice-quick.wav"></audio>
+        <audio id="barista-sound-meeting" preload="auto" src="/sounds/voice-meeting.wav"></audio>
+        <audio id="barista-sound-cancelled-quick" preload="auto" src="/sounds/voice-cancelled-quick.mp3"></audio>
+        <audio id="barista-sound-cancelled-meeting" preload="auto" src="/sounds/voice-cancelled-meeting.mp3"></audio>
+    </div>
 
     <!-- Header -->
     <header class="bg-white dark:bg-[#241C19] border-b-2 border-[#E8DDD6] dark:border-[#3D2F29] px-5 py-3.5 flex flex-wrap items-center justify-between gap-3 sticky top-0 z-10 shadow-xs">
@@ -420,6 +438,12 @@ new class extends Component
 
     <!-- Split Kitchen Queues -->
     <main class="max-w-7xl mx-auto w-full p-4 md:p-5 flex-1">
+        <div x-show="soundOn && !audioUnlocked" x-cloak
+             @click="unlockAudio(); playDingDong()"
+             class="mb-4 px-4 py-3 rounded-2xl bg-amber-100 border-2 border-amber-400 text-amber-950 font-black text-sm flex items-center justify-between gap-3 cursor-pointer shadow-xs hover:bg-amber-200 transition">
+            <span>🔇 Browser locked autoplay — tap anywhere once to enable Barista sound alerts</span>
+            <span class="px-3 py-1 rounded-xl bg-amber-600 text-white text-xs font-bold shrink-0">🔊 Enable Sound</span>
+        </div>
         @if($recentCancelledOrders->isNotEmpty())
             <div class="mb-5 space-y-3">
                 @foreach($recentCancelledOrders as $cOrder)
