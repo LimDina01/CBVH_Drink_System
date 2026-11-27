@@ -419,20 +419,20 @@ new class extends Component
     </div>
 
     <!-- Header -->
-    <header class="bg-white dark:bg-[#241C19] border-b-2 border-[#E8DDD6] dark:border-[#3D2F29] px-5 py-3.5 flex flex-wrap items-center justify-between gap-3 sticky top-0 z-10 shadow-xs">
-        <div class="flex items-center space-x-3">
-            <img src="{{ asset('images/cbvh-mark.png') }}" alt="CBVH" class="w-11 h-11 rounded-xl object-cover border border-[#E8DDD6]" />
+    <header class="bg-white dark:bg-[#241C19] border-b-2 border-[#E8DDD6] dark:border-[#3D2F29] px-3 py-2.5 md:px-5 md:py-3.5 flex flex-wrap items-center justify-between gap-2 md:gap-3 sticky top-0 z-10 shadow-xs">
+        <div class="flex items-center space-x-2.5 md:space-x-3">
+            <img src="{{ asset('images/cbvh-mark.png') }}" alt="CBVH" class="w-9 h-9 md:w-11 md:h-11 rounded-xl object-cover border border-[#E8DDD6]" />
             <div>
-                <h1 class="text-xl font-black text-[#2C211C] dark:text-[#F5EDE7] leading-tight">{{ __('cbvh.barista_title') }}</h1>
-                <p class="text-sm font-bold text-emerald-700">{{ __('cbvh.barista_subtitle') }}</p>
+                <h1 class="text-base md:text-xl font-black text-[#2C211C] dark:text-[#F5EDE7] leading-tight">{{ __('cbvh.barista_title') }}</h1>
+                <p class="text-xs md:text-sm font-bold text-emerald-700">{{ __('cbvh.barista_subtitle') }}</p>
             </div>
         </div>
 
-        <div class="flex flex-wrap items-center gap-2 relative">
+        <div class="flex flex-wrap items-center gap-1.5 md:gap-2 relative">
             <!-- Sound Toggle & Voice Test Buttons -->
             <div class="flex items-center space-x-1.5">
                 <button type="button" @click="soundOn = !soundOn; if(soundOn) playOrderAlert('quick')"
-                        class="px-3.5 py-2 rounded-xl text-sm font-bold border transition cursor-pointer flex items-center space-x-1.5"
+                        class="px-2.5 py-1.5 md:px-3.5 md:py-2 rounded-xl text-xs md:text-sm font-bold border transition cursor-pointer flex items-center space-x-1.5"
                         :class="soundOn ? 'bg-emerald-50 border-emerald-300 text-emerald-800' : 'bg-slate-100 border-slate-300 text-slate-600'"
                         title="{{ __('cbvh.sound_on') }}">
                     <span x-show="soundOn">🔊 {{ __('cbvh.sound_on') }}</span>
@@ -440,29 +440,29 @@ new class extends Component
                 </button>
 
                 <button type="button" @click="playOrderAlert('quick')"
-                        class="px-2.5 py-2 rounded-xl text-xs font-bold bg-[#FAF6F3] dark:bg-[#3A2C26] border border-[#E8DDD6] dark:border-[#523F36] text-[#835440] dark:text-[#E8CFC1] hover:bg-[#F5EDE7] cursor-pointer"
+                        class="hidden sm:inline-flex px-2.5 py-2 rounded-xl text-xs font-bold bg-[#FAF6F3] dark:bg-[#3A2C26] border border-[#E8DDD6] dark:border-[#523F36] text-[#835440] dark:text-[#E8CFC1] hover:bg-[#F5EDE7] cursor-pointer"
                         title="{{ __('cbvh.test_quick_alert') }}">
                     ⚡ {{ __('cbvh.filter_quick') }}
                 </button>
                 <button type="button" @click="playOrderAlert('meeting')"
-                        class="px-2.5 py-2 rounded-xl text-xs font-bold bg-[#FAF6F3] dark:bg-[#3A2C26] border border-[#E8DDD6] dark:border-[#523F36] text-[#835440] dark:text-[#E8CFC1] hover:bg-[#F5EDE7] cursor-pointer"
+                        class="hidden sm:inline-flex px-2.5 py-2 rounded-xl text-xs font-bold bg-[#FAF6F3] dark:bg-[#3A2C26] border border-[#E8DDD6] dark:border-[#523F36] text-[#835440] dark:text-[#E8CFC1] hover:bg-[#F5EDE7] cursor-pointer"
                         title="{{ __('cbvh.test_meeting_alert') }}">
                     🗓️ {{ __('cbvh.filter_meeting') }}
                 </button>
             </div>
 
-            <div class="text-sm bg-[#F5EDE7] dark:bg-[#3A2C26] text-[#835440] dark:text-[#E8CFC1] px-3.5 py-2 rounded-xl font-bold border border-[#E8DDD6]">
+            <div class="text-xs md:text-sm bg-[#F5EDE7] dark:bg-[#3A2C26] text-[#835440] dark:text-[#E8CFC1] px-2.5 py-1.5 md:px-3.5 md:py-2 rounded-xl font-bold border border-[#E8DDD6]">
                 {{ __('cbvh.done_today', ['count' => $completedToday]) }}
             </div>
 
             <button type="button" wire:click="$toggle('showHistory')"
-                    class="text-sm px-3.5 py-2 rounded-xl font-bold border transition cursor-pointer flex items-center gap-1.5 {{ $showHistory ? 'bg-[#9E6B55] text-white border-[#835440] shadow-xs' : 'bg-white dark:bg-[#241C19] text-[#2C211C] dark:text-[#F5EDE7] border-[#E8DDD6] hover:bg-[#FAF6F3]' }}">
+                    class="text-xs md:text-sm px-2.5 py-1.5 md:px-3.5 md:py-2 rounded-xl font-bold border transition cursor-pointer flex items-center gap-1.5 {{ $showHistory ? 'bg-[#9E6B55] text-white border-[#835440] shadow-xs' : 'bg-white dark:bg-[#241C19] text-[#2C211C] dark:text-[#F5EDE7] border-[#E8DDD6] hover:bg-[#FAF6F3]' }}">
                 @if($showHistory)
                     <span>{{ __('cbvh.barista_back_to_orders') }}</span>
                 @else
                     <span>📜 {{ __('cbvh.barista_history_btn') }}</span>
                     @if($cancelledTodayCount > 0)
-                        <span class="px-1.5 py-0.5 rounded-full bg-rose-600 text-white text-[11px] font-black">{{ $cancelledTodayCount }} ❌</span>
+                        <span class="px-1.5 py-0.5 rounded-full bg-rose-600 text-white text-[10px] md:text-[11px] font-black">{{ $cancelledTodayCount }} ❌</span>
                     @endif
                 @endif
             </button>
@@ -470,7 +470,7 @@ new class extends Component
             <!-- Manager / Advanced Menu (prevents accidental taps by barista) -->
             <div class="relative" @click.outside="menuOpen = false">
                 <button type="button" @click="menuOpen = !menuOpen" title="{{ __('cbvh.settings_menu') }}"
-                        class="w-10 h-10 rounded-xl bg-[#FAF6F3] border border-[#E8DDD6] text-[#7C6A60] hover:border-[#9E6B55] flex items-center justify-center text-base font-bold cursor-pointer">
+                        class="w-8 h-8 md:w-10 md:h-10 rounded-xl bg-[#FAF6F3] border border-[#E8DDD6] text-[#7C6A60] hover:border-[#9E6B55] flex items-center justify-center text-sm md:text-base font-bold cursor-pointer">
                     ⚙️
                 </button>
                 <div x-show="menuOpen" x-cloak
@@ -515,7 +515,7 @@ new class extends Component
     @endif
 
     <!-- Split Kitchen Queues -->
-    <main class="max-w-7xl mx-auto w-full p-4 md:p-5 flex-1">
+    <main class="max-w-7xl mx-auto w-full p-3 md:p-5 flex-1">
         <div x-show="soundOn && !audioUnlocked" x-cloak
              @click="unlockAudio(); playDingDong()"
              class="mb-4 px-4 py-3 rounded-2xl bg-amber-100 border-2 border-amber-400 text-amber-950 font-black text-sm flex items-center justify-between gap-3 cursor-pointer shadow-xs hover:bg-amber-200 transition">
