@@ -419,12 +419,38 @@ new class extends Component
     </div>
 
     <!-- Header -->
-    <header class="bg-white dark:bg-[#241C19] border-b-2 border-[#E8DDD6] dark:border-[#3D2F29] px-3 py-2.5 md:px-5 md:py-3.5 flex flex-wrap items-center justify-between gap-2 md:gap-3 sticky top-0 z-10 shadow-xs">
-        <div class="flex items-center space-x-2.5 md:space-x-3">
-            <img src="{{ asset('images/cbvh-mark.png') }}" alt="CBVH" class="w-9 h-9 md:w-11 md:h-11 rounded-xl object-cover border border-[#E8DDD6]" />
-            <div>
-                <h1 class="text-base md:text-xl font-black text-[#2C211C] dark:text-[#F5EDE7] leading-tight">{{ __('cbvh.barista_title') }}</h1>
-                <p class="text-xs md:text-sm font-bold text-emerald-700">{{ __('cbvh.barista_subtitle') }}</p>
+    <header class="bg-white dark:bg-[#241C19] border-b-2 border-[#E8DDD6] dark:border-[#3D2F29] px-3 py-2.5 md:px-5 md:py-3.5 flex flex-col md:flex-row md:items-center md:justify-between gap-2 md:gap-3 sticky top-0 z-10 shadow-xs">
+        <div class="flex items-center justify-between gap-2">
+            <div class="flex items-center space-x-2.5 md:space-x-3 min-w-0">
+                <img src="{{ asset('images/cbvh-mark.png') }}" alt="CBVH" class="w-9 h-9 md:w-11 md:h-11 rounded-xl object-cover border border-[#E8DDD6] shrink-0" />
+                <div class="min-w-0">
+                    <h1 class="text-base md:text-xl font-black text-[#2C211C] dark:text-[#F5EDE7] leading-tight truncate">{{ __('cbvh.barista_title') }}</h1>
+                    <p class="text-xs md:text-sm font-bold text-emerald-700">{{ __('cbvh.barista_subtitle') }}</p>
+                </div>
+            </div>
+
+            <!-- Mobile settings button sits neatly on top-right -->
+            <div class="relative md:hidden shrink-0" @click.outside="menuOpen = false">
+                <button type="button" @click="menuOpen = !menuOpen" title="{{ __('cbvh.settings_menu') }}"
+                        class="w-9 h-9 rounded-xl bg-[#FAF6F3] border border-[#E8DDD6] text-[#7C6A60] hover:border-[#9E6B55] flex items-center justify-center text-sm font-bold cursor-pointer">
+                    ⚙️
+                </button>
+                <div x-show="menuOpen" x-cloak
+                     class="absolute right-0 mt-2 w-52 bg-white dark:bg-[#241C19] border-2 border-[#E8DDD6] rounded-2xl shadow-xl p-2 space-y-1 z-30">
+                    <div class="px-2 py-1 text-[11px] font-bold uppercase text-[#7C6A60]">{{ __('cbvh.settings_menu') }}</div>
+                    <a href="{{ route('lang.switch', app()->getLocale() === 'km' ? 'en' : 'km') }}"
+                       class="block w-full text-left px-3 py-2 rounded-xl text-sm font-bold hover:bg-[#FAF6F3] text-[#2C211C]">
+                        {{ app()->getLocale() === 'km' ? '🇬🇧 EN' : '🇰🇭 ខ្មែរ' }}
+                    </a>
+                    @if($currentUser?->isAdmin())
+                        <a href="/admin" class="block w-full text-left px-3 py-2 rounded-xl text-sm font-bold hover:bg-[#FAF6F3] text-[#835440]">{{ __('cbvh.admin') }}</a>
+                    @endif
+                    <a href="/" class="block w-full text-left px-3 py-2 rounded-xl text-sm font-bold hover:bg-[#FAF6F3] text-[#835440]">{{ __('cbvh.mini_app') }}</a>
+                    <div class="border-t border-[#E8DDD6] my-1"></div>
+                    <button type="button" @click="menuOpen = false; confirmLogout = true" class="w-full text-left px-3 py-2 rounded-xl text-sm font-bold text-rose-700 hover:bg-rose-50 cursor-pointer">
+                        🚪 {{ __('cbvh.logout') }}
+                    </button>
+                </div>
             </div>
         </div>
 
@@ -432,7 +458,7 @@ new class extends Component
             <!-- Sound Toggle & Voice Test Buttons -->
             <div class="flex items-center space-x-1.5">
                 <button type="button" @click="soundOn = !soundOn; if(soundOn) playOrderAlert('quick')"
-                        class="px-2.5 py-1.5 md:px-3.5 md:py-2 rounded-xl text-xs md:text-sm font-bold border transition cursor-pointer flex items-center space-x-1.5"
+                        class="px-2.5 py-1.5 md:px-3.5 md:py-2 rounded-xl text-xs md:text-sm font-bold border transition cursor-pointer flex items-center space-x-1"
                         :class="soundOn ? 'bg-emerald-50 border-emerald-300 text-emerald-800' : 'bg-slate-100 border-slate-300 text-slate-600'"
                         title="{{ __('cbvh.sound_on') }}">
                     <span x-show="soundOn">🔊 {{ __('cbvh.sound_on') }}</span>
@@ -456,7 +482,7 @@ new class extends Component
             </div>
 
             <button type="button" wire:click="$toggle('showHistory')"
-                    class="text-xs md:text-sm px-2.5 py-1.5 md:px-3.5 md:py-2 rounded-xl font-bold border transition cursor-pointer flex items-center gap-1.5 {{ $showHistory ? 'bg-[#9E6B55] text-white border-[#835440] shadow-xs' : 'bg-white dark:bg-[#241C19] text-[#2C211C] dark:text-[#F5EDE7] border-[#E8DDD6] hover:bg-[#FAF6F3]' }}">
+                    class="text-xs md:text-sm px-2.5 py-1.5 md:px-3.5 md:py-2 rounded-xl font-bold border transition cursor-pointer flex items-center gap-1 {{ $showHistory ? 'bg-[#9E6B55] text-white border-[#835440] shadow-xs' : 'bg-white dark:bg-[#241C19] text-[#2C211C] dark:text-[#F5EDE7] border-[#E8DDD6] hover:bg-[#FAF6F3]' }}">
                 @if($showHistory)
                     <span>{{ __('cbvh.barista_back_to_orders') }}</span>
                 @else
@@ -467,10 +493,10 @@ new class extends Component
                 @endif
             </button>
 
-            <!-- Manager / Advanced Menu (prevents accidental taps by barista) -->
-            <div class="relative" @click.outside="menuOpen = false">
+            <!-- Manager / Advanced Menu (Tablet/Desktop) -->
+            <div class="relative hidden md:block" @click.outside="menuOpen = false">
                 <button type="button" @click="menuOpen = !menuOpen" title="{{ __('cbvh.settings_menu') }}"
-                        class="w-8 h-8 md:w-10 md:h-10 rounded-xl bg-[#FAF6F3] border border-[#E8DDD6] text-[#7C6A60] hover:border-[#9E6B55] flex items-center justify-center text-sm md:text-base font-bold cursor-pointer">
+                        class="w-10 h-10 rounded-xl bg-[#FAF6F3] border border-[#E8DDD6] text-[#7C6A60] hover:border-[#9E6B55] flex items-center justify-center text-base font-bold cursor-pointer">
                     ⚙️
                 </button>
                 <div x-show="menuOpen" x-cloak
@@ -634,21 +660,21 @@ new class extends Component
                 </div>
             </section>
         @else
-        <!-- Queue View Switcher (Phone-friendly 1-tap tabs) -->
-        <div class="mb-4 flex flex-wrap items-center gap-2">
+        <!-- Queue View Switcher (Phone-friendly 1-row tabs) -->
+        <div class="mb-3 md:mb-4 grid grid-cols-3 md:flex md:flex-wrap items-center gap-1.5 md:gap-2">
             <button type="button" wire:click="$set('viewFilter', 'all')"
-                    class="px-3.5 py-2 rounded-xl text-xs md:text-sm font-black border transition cursor-pointer {{ $viewFilter === 'all' ? 'bg-[#2C211C] text-white border-[#2C211C] shadow-xs' : 'bg-white dark:bg-[#241C19] text-[#7C6A60] border-[#E8DDD6] hover:bg-[#FAF6F3]' }}">
+                    class="px-2 py-2 md:px-3.5 rounded-xl text-[11px] md:text-sm font-black border transition cursor-pointer text-center truncate {{ $viewFilter === 'all' ? 'bg-[#2C211C] text-white border-[#2C211C] shadow-xs' : 'bg-white dark:bg-[#241C19] text-[#7C6A60] border-[#E8DDD6] hover:bg-[#FAF6F3]' }}">
                 {{ __('cbvh.filter_both') }} ({{ count($instantOrders) + count($meetingOrders) }})
             </button>
             <button type="button" wire:click="$set('viewFilter', 'instant')"
-                    class="px-3.5 py-2 rounded-xl text-xs md:text-sm font-black border transition cursor-pointer flex items-center gap-1.5 {{ $viewFilter === 'instant' ? 'bg-amber-500 text-white border-amber-600 shadow-xs' : 'bg-amber-50 text-amber-900 border-amber-200 hover:bg-amber-100' }}">
-                <span>⚡ {{ __('cbvh.filter_quick') }}</span>
-                <span class="px-1.5 py-0.5 rounded-full text-[11px] {{ $viewFilter === 'instant' ? 'bg-white/25 text-white' : 'bg-amber-200 text-amber-950' }}">{{ count($instantOrders) }}</span>
+                    class="px-2 py-2 md:px-3.5 rounded-xl text-[11px] md:text-sm font-black border transition cursor-pointer flex items-center justify-center gap-1 truncate {{ $viewFilter === 'instant' ? 'bg-amber-500 text-white border-amber-600 shadow-xs' : 'bg-amber-50 text-amber-900 border-amber-200 hover:bg-amber-100' }}">
+                <span class="truncate">⚡ {{ __('cbvh.filter_quick') }}</span>
+                <span class="px-1.5 py-0.5 rounded-full text-[10px] md:text-[11px] shrink-0 {{ $viewFilter === 'instant' ? 'bg-white/25 text-white' : 'bg-amber-200 text-amber-950' }}">{{ count($instantOrders) }}</span>
             </button>
             <button type="button" wire:click="$set('viewFilter', 'meeting')"
-                    class="px-3.5 py-2 rounded-xl text-xs md:text-sm font-black border transition cursor-pointer flex items-center gap-1.5 {{ $viewFilter === 'meeting' ? 'bg-[#9E6B55] text-white border-[#835440] shadow-xs' : 'bg-[#F5EDE7] text-[#835440] border-[#E8DDD6] hover:bg-[#EDE0D7]' }}">
-                <span>📅 {{ __('cbvh.filter_meeting') }}</span>
-                <span class="px-1.5 py-0.5 rounded-full text-[11px] {{ $viewFilter === 'meeting' ? 'bg-white/25 text-white' : 'bg-[#E8DDD6] text-[#2C211C]' }}">{{ count($meetingOrders) }}</span>
+                    class="px-2 py-2 md:px-3.5 rounded-xl text-[11px] md:text-sm font-black border transition cursor-pointer flex items-center justify-center gap-1 truncate {{ $viewFilter === 'meeting' ? 'bg-[#9E6B55] text-white border-[#835440] shadow-xs' : 'bg-[#F5EDE7] text-[#835440] border-[#E8DDD6] hover:bg-[#EDE0D7]' }}">
+                <span class="truncate">📅 {{ __('cbvh.filter_meeting') }}</span>
+                <span class="px-1.5 py-0.5 rounded-full text-[10px] md:text-[11px] shrink-0 {{ $viewFilter === 'meeting' ? 'bg-white/25 text-white' : 'bg-[#E8DDD6] text-[#2C211C]' }}">{{ count($meetingOrders) }}</span>
             </button>
         </div>
 

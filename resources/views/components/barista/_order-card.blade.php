@@ -69,7 +69,7 @@
                 {{ \App\Support\CbvhLocale::floor($order->room?->floor) }}
             </div>
         </div>
-        <div class="text-right shrink-0 bg-[#FAF6F3] dark:bg-[#1A1412] px-2.5 py-1.5 md:px-3.5 md:py-2 rounded-xl border {{ $isOverdue ? 'border-rose-300 dark:border-rose-800 bg-rose-50/70 dark:bg-rose-950/30' : 'border-[#E8DDD6]' }} space-y-0.5">
+        <div class="w-full sm:w-auto text-left sm:text-right shrink-0 bg-[#FAF6F3] dark:bg-[#1A1412] px-2.5 py-1.5 md:px-3.5 md:py-2 rounded-xl border {{ $isOverdue ? 'border-rose-300 dark:border-rose-800 bg-rose-50/70 dark:bg-rose-950/30' : 'border-[#E8DDD6]' }} space-y-0.5">
             @if($isAsapQuick)
                 <div class="text-xs md:text-sm font-black uppercase {{ $isOverdue ? 'text-rose-600 dark:text-rose-400' : 'text-amber-700' }}">
                     ⚡ {{ __('cbvh.barista_asap_badge') }}
